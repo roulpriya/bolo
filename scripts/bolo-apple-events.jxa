@@ -1,0 +1,309 @@
+ObjC.import("Foundation");
+
+function output(value) {
+  return JSON.stringify(value);
+}
+
+function fail(message) {
+  throw new Error(message);
+}
+
+function exists(reference) {
+  try {
+    return reference.exists();
+  } catch (_) {
+    return false;
+  }
+}
+
+function html(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function run(argv) {
+  if (argv.length !== 1) fail("Expected one JSON action.");
+  const action = JSON.parse(argv[0]);
+
+  if (action.type === "open") {
+    const app = Application(action.application);
+    app.activate();
+    return output({
+      ok: true,
+      verified: true,
+      message: `Opened ${action.application}.`,
+    });
+  }
+
+  if (action.type === "reminder.add") {
+    const reminders = Application("Reminders");
+    const list = action.list
+      ? reminders.lists.byName(action.list)
+      : reminders.defaultList();
+    if (!exists(list)) fail(`Reminder list "${action.list}" was not found.`);
+
+    const properties = { name: action.title };
+    if (action.notes) properties.body = action.notes;
+    if (action.due) properties.dueDate = new Date(action.due);
+    const reminder = reminders.Reminder(properties);
+    list.reminders.push(reminder);
+    const verified =
+      reminder.name() === action.title &&
+      (!action.due ||
+        Math.abs(reminder.dueDate().getTime() - new Date(action.due).getTime()) <
+          1000);
+    if (action.open) reminders.activate();
+    return output({
+      ok: true,
+      verified,
+      resourceId: String(reminder.id()),
+      message: `Created reminder "${action.title}" in "${list.name()}".`,
+    });
+  }
+
+  if (action.type === "note.shopping") {
+    const notes = Application("Notes");
+    const account = notes.defaultAccount();
+    const folder = action.folder
+      ? account.folders.byName(action.folder)
+      : account.defaultFolder();
+    if (!exists(folder)) fail(`Notes folder "${action.folder || "default"}" was not found.`);
+
+    const body = action.items
+      .map((item) => `<div>☐ ${html(item)}</div>`)
+      .join("");
+    const note = notes.Note({ name: action.title, body });
+    folder.notes.push(note);
+    const renderedBody = String(note.body());
+    const verified =
+      note.name() === action.title &&
+      action.items.every((item) => renderedBody.includes(html(item)));
+    if (action.open) notes.activate();
+    return output({
+      ok: true,
+      verified,
+      resourceId: String(note.id()),
+      message: `Created note "${action.title}" with ${action.items.length} items.`,
+    });
+  }
+
+  if (action.type === "reminder.search") {
+    const reminders = Application("Reminders");
+    const query = String(action.query).toLowerCase();
+    const results = [];
+    for (const list of reminders.lists()) {
+      for (const reminder of list.reminders()) {
+        const title = String(reminder.name());
+        if (!title.toLowerCase().includes(query)) continue;
+        let due = null;
+        try {
+          const value = reminder.dueDate();
+          due = value ? value.toISOString() : null;
+        } catch (_) {}
+        results.push({
+          id: String(reminder.id()),
+          title,
+          list: String(list.name()),
+          due,
+          completed: Boolean(reminder.completed()),
+        });
+        if (results.length >= 20) break;
+      }
+      if (results.length >= 20) break;
+    }
+    return output({
+      ok: true,
+      verified: true,
+      results,
+      message: results.length
+        ? `Found ${results.length} matching reminder${results.length === 1 ? "" : "s"}.`
+        : `No reminders matched "${action.query}".`,
+    });
+  }
+
+  if (action.type === "note.search") {
+    const notes = Application("Notes");
+    const query = String(action.query).toLowerCase();
+    const results = [];
+    for (const folder of notes.defaultAccount().folders()) {
+      for (const note of folder.notes()) {
+        const title = String(note.name());
+        if (!title.toLowerCase().includes(query)) continue;
+        results.push({
+          id: String(note.id()),
+          title,
+          folder: String(folder.name()),
+        });
+        if (results.length >= 20) break;
+      }
+      if (results.length >= 20) break;
+    }
+    return output({
+      ok: true,
+      verified: true,
+      results,
+      message: results.length
+        ? `Found ${results.length} matching note${results.length === 1 ? "" : "s"}.`
+        : `No notes matched "${action.query}".`,
+    });
+  }
+
+  if (action.type === "contact.search") {
+    const contacts = Application("Contacts");
+    const query = String(action.query).toLowerCase();
+    const results = [];
+    for (const person of contacts.people()) {
+      const name = String(person.name());
+      if (!name.toLowerCase().includes(query)) continue;
+      let emails = [];
+      let phones = [];
+      try {
+        emails = person.emails().map((entry) => String(entry.value()));
+      } catch (_) {}
+      try {
+        phones = person.phones().map((entry) => String(entry.value()));
+      } catch (_) {}
+      results.push({
+        id: String(person.id()),
+        name,
+        emails,
+        phones,
+      });
+      if (results.length >= 20) break;
+    }
+    return output({
+      ok: true,
+      verified: true,
+      results,
+      message: results.length
+        ? `Found ${results.length} matching contact${results.length === 1 ? "" : "s"}.`
+        : `No contacts matched "${action.query}".`,
+    });
+  }
+
+  if (action.type === "music.control") {
+    const music = Application("Music");
+    if (action.command === "play") music.play();
+    else if (action.command === "pause") music.pause();
+    else if (action.command === "playpause") music.playpause();
+    else if (action.command === "next") music.nextTrack();
+    else if (action.command === "previous") music.previousTrack();
+    else fail(`Unsupported Music command: ${action.command}`);
+    const playerState = String(music.playerState());
+    const verified =
+      action.command === "pause"
+        ? playerState === "paused" || playerState === "stopped"
+        : action.command === "play"
+          ? playerState === "playing"
+          : true;
+    return output({
+      ok: true,
+      verified,
+      playerState,
+      message: `Apple Music command "${action.command}" completed; player is ${playerState}.`,
+    });
+  }
+
+  if (action.type === "finder.reveal") {
+    const manager = $.NSFileManager.defaultManager;
+    const standardized = $(String(action.path))
+      .stringByStandardizingPath.js;
+    if (!manager.fileExistsAtPath($(standardized))) {
+      fail(`Finder item "${standardized}" was not found.`);
+    }
+    const finder = Application("Finder");
+    finder.reveal(Path(standardized));
+    finder.activate();
+    return output({
+      ok: true,
+      verified: true,
+      path: standardized,
+      message: `Revealed "${standardized}" in Finder.`,
+    });
+  }
+
+  if (action.type === "calendar.list") {
+    const calendarApp = Application("Calendar");
+    const writable = calendarApp.calendars()
+      .filter((calendar) => {
+        try {
+          return calendar.writable();
+        } catch (_) {
+          return false;
+        }
+      });
+    const totals = {};
+    for (const calendar of writable) {
+      const name = calendar.name();
+      totals[name] = (totals[name] || 0) + 1;
+    }
+    const seen = {};
+    const calendars = writable.map((calendar) => {
+      const name = calendar.name();
+      seen[name] = (seen[name] || 0) + 1;
+      return {
+        name,
+        selector: totals[name] > 1 ? `${name}#${seen[name]}` : name,
+      };
+    });
+    return output({
+      ok: true,
+      calendars,
+      message: calendars.length
+        ? `Writable calendars:\n${calendars
+            .map((calendar) => `- ${calendar.selector}`)
+            .join("\n")}`
+        : "No writable calendars found.",
+    });
+  }
+
+  if (action.type === "calendar.create") {
+    const calendarApp = Application("Calendar");
+    const calendars = calendarApp.calendars();
+    const selector = action.calendar.match(/^(.*)#([1-9][0-9]*)$/);
+    const requestedName = selector ? selector[1] : action.calendar;
+    const nameMatches = calendars.filter(
+      (candidate) => candidate.name() === requestedName,
+    );
+    if (!selector && nameMatches.length > 1) {
+      fail(`More than one calendar is named "${action.calendar}". Use its selector from "bolo-mac calendar list".`);
+    }
+    const calendar = selector
+      ? nameMatches[Number(selector[2]) - 1]
+      : nameMatches[0];
+    if (!calendar) fail(`Calendar "${action.calendar}" was not found.`);
+    if (!calendar.writable()) fail(`Calendar "${action.calendar}" is read-only.`);
+
+    const properties = {
+      summary: action.title,
+      startDate: new Date(action.start),
+      endDate: new Date(action.end),
+    };
+    if (action.location) properties.location = action.location;
+    if (action.notes) properties.description = action.notes;
+
+    const event = calendarApp.Event(properties);
+    calendar.events.push(event);
+    for (const email of action.invitees) {
+      event.attendees.push(calendarApp.Attendee({ email }));
+    }
+    if (action.open) calendarApp.activate();
+    const verified =
+      event.summary() === action.title &&
+      Math.abs(event.startDate().getTime() - new Date(action.start).getTime()) <
+        1000 &&
+      Math.abs(event.endDate().getTime() - new Date(action.end).getTime()) <
+        1000;
+    return output({
+      ok: true,
+      verified,
+      resourceId: String(event.uid()),
+      message: `Created calendar event "${action.title}" in "${calendar.name()}".`,
+    });
+  }
+
+  fail(`Unsupported action: ${action.type}`);
+}

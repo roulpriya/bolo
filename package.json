@@ -1,0 +1,33 @@
+{
+  "name": "bolo-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.js",
+  "bin": {
+    "bolo-mac": "bin/bolo-mac"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "server": "node src/server.js",
+    "local-agent:setup": "zsh scripts/build-mac-control.sh",
+    "local-agent:permissions": "open -R \"$PWD/bin/Bolo Mac Control.app\" && open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'",
+    "mac": "bin/bolo-mac",
+    "check": "find src electron public test -type f \\( -name '*.js' -o -name '*.cjs' \\) -print0 | xargs -0 -n1 node --check",
+    "test": "NODE_ENV=test node --test"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.13.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0"
+  }
+}

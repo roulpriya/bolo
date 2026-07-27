@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+bin/
+.DS_Store
+artifacts/
+.bolo/
+npm-debug.log*
