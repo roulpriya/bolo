@@ -1,4 +1,5 @@
 const SARVAM_BASE_URL = "https://api.sarvam.ai";
+const LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}-IN$/i;
 const FEMALE_TTS_SPEAKERS = new Set([
   "ritu",
   "priya",
@@ -18,6 +19,13 @@ const FEMALE_TTS_SPEAKERS = new Set([
 
 export const DEFAULT_TTS_SPEAKER = "simran";
 export const DEFAULT_TTS_PACE = 1.12;
+
+export function normalizeLanguageCode(value, fallback = "en-IN") {
+  const code = String(value || "").trim();
+  if (!LANGUAGE_CODE_PATTERN.test(code)) return fallback;
+  const [language] = code.split("-");
+  return `${language.toLowerCase()}-IN`;
+}
 
 export function speechLanguage(text) {
   return /[\u0900-\u097f]/.test(String(text || "")) ? "hi-IN" : "en-IN";
@@ -63,6 +71,54 @@ async function errorMessage(response, fallback) {
   }
 }
 
+export async function translateText(
+  input,
+  {
+    sourceLanguageCode = "auto",
+    targetLanguageCode = "en-IN",
+    fetchImpl = globalThis.fetch,
+  } = {},
+) {
+  const text = String(input || "").trim();
+  if (!text) throw new Error("No text supplied for translation.");
+  if (text.length > 2_000) {
+    throw new Error("Sarvam translation input exceeds 2,000 characters.");
+  }
+  const target = normalizeLanguageCode(targetLanguageCode);
+  const source =
+    sourceLanguageCode === "auto"
+      ? "auto"
+      : normalizeLanguageCode(sourceLanguageCode);
+  if (source !== "auto" && source === target) {
+    return { text, sourceLanguageCode: source };
+  }
+
+  const response = await fetchImpl(`${SARVAM_BASE_URL}/translate`, {
+    method: "POST",
+    headers: {
+      "api-subscription-key": apiKey(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: text,
+      source_language_code: source,
+      target_language_code: target,
+      model: source === "auto" ? "mayura:v1" : "sarvam-translate:v1",
+      mode: "formal",
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Text translation failed."));
+  }
+  const data = await response.json();
+  const translated = String(data.translated_text || "").trim();
+  if (!translated) throw new Error("Sarvam returned an empty translation.");
+  return {
+    text: translated,
+    sourceLanguageCode: normalizeLanguageCode(data.source_language_code, source),
+  };
+}
+
 export async function transcribe(buffer, mimeType = "audio/webm") {
   const form = new FormData();
   const extension = mimeType.includes("mp4") ? "m4a" : "webm";
@@ -103,7 +159,7 @@ export async function synthesize(
     },
     body: JSON.stringify({
       text,
-      target_language_code: targetLanguageCode,
+      target_language_code: normalizeLanguageCode(targetLanguageCode),
       speaker,
       pace,
       speech_sample_rate: 24000,

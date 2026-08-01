@@ -5,6 +5,8 @@ import {
   DEFAULT_TTS_PACE,
   synthesize,
   speechLanguage,
+  normalizeLanguageCode,
+  translateText,
   ttsPace,
   ttsSpeaker,
 } from "../src/sarvam.js";
@@ -49,4 +51,34 @@ test("rejects an unsafe Sarvam speech pace", () => {
 test("selects Hindi for Devanagari and Indian English otherwise", () => {
   assert.equal(speechLanguage("नमस्ते, reminder set karo"), "hi-IN");
   assert.equal(speechLanguage("Your reminder is ready."), "en-IN");
+});
+
+test("normalizes detected BCP-47 language codes", () => {
+  assert.equal(normalizeLanguageCode("TA-in"), "ta-IN");
+  assert.equal(normalizeLanguageCode("not-a-language"), "en-IN");
+});
+
+test("translates text with explicit source and target languages", async () => {
+  process.env.SARVAM_API_KEY = "sarvam_test";
+  let request;
+  const translated = await translateText("Which city?", {
+    sourceLanguageCode: "en-IN",
+    targetLanguageCode: "hi-IN",
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return {
+        ok: true,
+        json: async () => ({
+          translated_text: "कौन सा शहर?",
+          source_language_code: "en-IN",
+        }),
+      };
+    },
+  });
+  const body = JSON.parse(request.options.body);
+  assert.equal(request.url, "https://api.sarvam.ai/translate");
+  assert.equal(body.source_language_code, "en-IN");
+  assert.equal(body.target_language_code, "hi-IN");
+  assert.equal(body.model, "sarvam-translate:v1");
+  assert.equal(translated.text, "कौन सा शहर?");
 });

@@ -1,37 +1,35 @@
 # Security
 
-## Reporting a vulnerability
+## Trust boundaries
 
-Please do not open a public issue for a suspected vulnerability. Use GitHub's
-private vulnerability reporting or Security Advisories feature for this
-repository and include reproduction steps, impact, and the affected version.
+- The renderer runs with `sandbox: true`, `contextIsolation: true`, and no Node
+  integration.
+- The preload exposes only fixed Bolo operations. Every main-process IPC
+  handler verifies that the sender is Bolo's main renderer and validates the
+  payload again in `DesktopService`.
+- Sarvam and OpenAI API keys remain in the main process. Raw microphone audio
+  is forwarded only to Sarvam and is not persisted.
+- The local browser has a dedicated Bolo profile. Web content is untrusted and
+  cannot directly invoke shell or desktop tools.
 
-## Security boundaries
+## Execution policy
 
-- Bolo listens only on `127.0.0.1` and rejects cross-origin browser requests.
-- Every executable task requires an explicit, single-use approval bound to the
-  cryptographic hash of the exact plan version.
-- Local Apple Events and URLs are constrained to the actions and destinations
-  implemented in the source.
-- Electron runs the renderer with context isolation, sandboxing, no Node.js
-  integration, a restrictive Content Security Policy, and blocked navigation.
-- Computer-use screenshots are temporary and are deleted after each normal run.
-  A process crash can leave files in the ignored `artifacts/` directory, which
-  should be cleared before sharing a development machine or workspace archive.
-- Computer Use is restricted to an application allowlist. Passwords, Keychain
-  Access, destructive actions, credential entry, and financial browser actions
-  are denied by policy.
-- Run summaries are written to `.bolo/runs.json`; secrets, screenshots,
-  controllers, and internal stop reasons are excluded.
+Routine work executes immediately. The shell rejects catastrophic disk
+operations, credential-store extraction, and commands that disable platform
+security. Privilege escalation, deletion, installations, uploads, messages,
+purchases, form submissions, and similar consequential actions require
+just-in-time confirmation.
 
-## Sensitive data
+Credentials must be entered by the user directly into the visible application.
+Bolo must never request a password, API key, OTP, or other secret through
+speech, text, or a tool result.
 
-Never commit `.env`, `.env.local`, API keys, browser profile identifiers, the
-generated `bin/` helper, or `artifacts/`. These paths are excluded by
-`.gitignore`. Rotate a credential immediately if it is ever committed, even if
-the commit is later rewritten.
+Computer Use is limited to desktop-only work, explicit user requests, or a
+recorded failure of an applicable specialized tool. Provider safety checks
+remain active.
 
-Bolo sends task text to OpenAI when local planning is insufficient, browser
-tasks to Browser Use, and microphone audio or speech text to Sarvam when those
-features are used. Review those providers' data handling terms before using
-Bolo with sensitive information.
+## Local data
+
+Sanitized run summaries and the managed browser profile live under Electron's
+user-data directory. Screenshots are temporary and normally removed when a
+computer run ends. Stop and application shutdown abort all active tools.

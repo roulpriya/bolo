@@ -3,31 +3,42 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "electron/main.js",
-  "bin": {
-    "bolo-mac": "bin/bolo-mac"
-  },
+  "main": "dist/electron/main.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "electron .",
-    "start": "electron .",
-    "server": "node src/server.js",
+    "build": "mkdir -p dist && find dist -type f -delete && tsc && cp electron/preload.cjs dist/electron/ && vite build",
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite --host 127.0.0.1",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "start": "npm run build && electron .",
+    "browser:setup": "playwright install chromium",
     "local-agent:setup": "zsh scripts/build-mac-control.sh",
     "local-agent:permissions": "open -R \"$PWD/bin/Bolo Mac Control.app\" && open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'",
-    "mac": "bin/bolo-mac",
-    "check": "find src electron public test -type f \\( -name '*.js' -o -name '*.cjs' \\) -print0 | xargs -0 -n1 node --check",
-    "test": "NODE_ENV=test node --test"
+    "check": "tsc --noEmit",
+    "test": "npm run build && NODE_ENV=test node --test dist/test/*.test.js",
+    "test:browser-agent": "npm run build && node scripts/test-browser-agent.mjs",
+    "test:browser-agent:real": "npm run build && node scripts/test-browser-agent-real-url.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",
     "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-    "multer": "^2.0.2",
+    "playwright": "^1.62.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "ws": "^8.21.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "electron": "^43.2.0"
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^10.0.4",
+    "electron": "^43.2.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "wait-on": "^9.1.0"
   }
 }

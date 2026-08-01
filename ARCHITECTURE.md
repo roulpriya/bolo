@@ -1,66 +1,49 @@
 # Bolo architecture
 
-Bolo separates planning, approval, orchestration, capabilities, execution, and
-verification. A planning model never receives an execution tool.
+Bolo is an Electron-only voice execution agent. The renderer is sandboxed and
+has no Node.js access. A narrow preload bridge connects it to `DesktopService`
+in the Electron main process; there is no local HTTP server.
 
-## Request lifecycle
+## Voice lifecycle
 
-1. Sarvam or the text composer supplies a transcript.
-2. The planning agent returns a versioned plan containing one or more steps.
-3. The plan compiler validates capability arguments, dependencies, risk, and
-   success criteria.
-4. The server issues a single-use approval token bound to the plan hash.
-5. The deterministic orchestrator schedules approved steps.
-6. Each worker receives a new scoped session and only its step.
-7. Apple Events use structured JSON through one fixed JXA program. Browser and
-   Computer Use workers inspect their final state.
-8. A dependent step runs only after every prerequisite is verified.
+1. The renderer captures microphone samples with an `AudioWorklet`, converts
+   them to mono 16 kHz signed PCM, and batches 100 ms chunks.
+2. Validated IPC forwards those chunks to the main process.
+3. `VoiceService` owns the authenticated Sarvam WebSocket and requests Saaras
+   v3 English translation, source-language detection, and VAD signals.
+4. Sarvam's finalized English translation and detected BCP-47 language code
+   create an agent run immediately.
+5. Questions from `ask_user_question` pause that same run. `DesktopService`
+   translates each question back to the run's source language before the
+   renderer speaks it, records a voice or typed answer, and resolves the
+   pending tool call. The final result follows the same localization path.
 
-Read-only sibling steps may run concurrently. Mutations are serialized.
-Explicit `$steps.<id>.data.<field>` references carry verified structured output
-between dependent steps.
+Only one microphone session and one non-terminal agent run may exist at once.
+Late, duplicate, mismatched, and oversized messages are rejected.
 
-## Capability routing
+## Agent and tools
 
-The capability registry is the source of truth for argument schemas, executor,
-risk, approval mode, latency target, timeout policy, and verification method.
-Routing order is:
+The primary OpenAI agent owns five tools:
 
-1. deterministic local action;
-2. structured Apple Events;
-3. Browser Use for web interfaces;
-4. scoped Computer Use for allowlisted Mac applications.
+1. `ask_user_question` for missing information and just-in-time consent.
+2. Local shell for files, processes, scripts, and commands.
+3. Hosted web search for current information.
+4. A visible Playwright browser specialist for websites and web applications.
+5. Scoped Computer Use for desktop-only work, an explicit user request, or a
+   recorded specialized-tool failure.
 
-Computer Use is a fallback, not a universal default. Passwords, Keychain
-Access, financial actions, credential entry, destructive actions, and unknown
-applications are blocked.
+The browser uses a persistent profile stored beneath Electron's user-data
+directory. Computer Use retains screenshot cleanup, action bounds, repetition
+protection, and macOS Accessibility checks.
 
-Common commands are compiled before the planning-model fallback. Website opens,
-web searches, YouTube opens and song lookup, application launches, and
-supported Apple Events therefore avoid agent startup latency. Navigation plus
-search requests are collapsed into one URL operation. Agentic workers are
-reserved for tasks that must inspect changing UI.
+## State and shutdown
 
-## Current capability boundary
+`DesktopService` owns run state, cancellation controllers, pending questions,
+voice sessions, and sanitized history. Public run states are `running`,
+`waiting_for_user`, `completed`, `failed`, and `cancelled`. Secrets,
+controllers, raw audio, screenshots, and pending promise callbacks are never
+persisted.
 
-- Create and verify Apple Notes shopping lists.
-- Create and verify Apple Reminders.
-- Create and verify Apple Calendar events.
-- Search Reminders, Notes, and Contacts without mutation.
-- Control Apple Music playback.
-- Reveal existing non-sensitive files under the user home directory in Finder.
-- Open allowlisted applications.
-- Open YouTube, web searches, and pre-filled Google Calendar forms.
-- Resolve YouTube videos and perform approved general browser tasks.
-- Perform approved tasks in allowlisted local apps with Computer Use fallback.
-
-Deletion, purchases, credential handling, and unattended external
-communication are not supported.
-
-## State and persistence
-
-Run summaries and step results are written atomically to `.bolo/runs.json`.
-Controllers, secrets, screenshots, and internal stop reasons are excluded.
-Runs interrupted by a restart are restored as failed rather than resumed
-silently. Screenshots remain temporary and are removed by the Computer Use
-worker.
+On shutdown, Bolo closes voice and browser sessions, aborts active work,
+rejects pending questions, removes temporary screenshots, and flushes run
+summaries.

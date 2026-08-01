@@ -4,123 +4,15 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src 'self'; media-src 'self' blob:; style-src 'self'; script-src 'self'"
+      content="default-src 'self'; connect-src 'self'; media-src 'self' blob:; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#151517" />
     <title>Bolo</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="palette" aria-label="Bolo planner">
-      <header class="titlebar">
-        <div class="brand">
-          <span class="brand-orb" aria-hidden="true"></span>
-          <span>Bolo</span>
-        </div>
-        <span id="agent-status" class="status"><i></i><span>Ready</span></span>
-        <kbd>⌘ ⇧ Space</kbd>
-      </header>
-
-      <section class="search-area">
-        <form id="composer" class="composer">
-          <span class="search-icon" aria-hidden="true"></span>
-          <label class="sr-only" for="composer-input">Tell Bolo what to do</label>
-          <textarea
-            id="composer-input"
-            name="message"
-            rows="1"
-            autocomplete="off"
-            autofocus
-            placeholder="What do you want to get done?"
-          ></textarea>
-          <button
-            id="composer-mic"
-            class="icon-button"
-            type="button"
-            aria-label="Record a voice request"
-          >
-            <span class="mic-icon" aria-hidden="true"></span>
-          </button>
-          <button id="composer-send" class="submit-button" type="submit">
-            Submit
-            <span aria-hidden="true">↵</span>
-          </button>
-
-          <div id="recording-bar" class="recording-bar" hidden>
-            <span class="recording-dot"></span>
-            <strong>Listening</strong>
-            <span id="recording-time">0:00</span>
-            <span class="recording-spacer"></span>
-            <button id="recording-cancel" type="button">Cancel</button>
-            <button id="recording-done" type="button">Use recording</button>
-          </div>
-        </form>
-        <p id="input-hint" class="input-hint">
-          Press Enter to submit · Shift + Enter for a new line
-        </p>
-      </section>
-
-      <section id="conversation" class="conversation" aria-live="polite" hidden>
-        <div id="chat-log" class="chat-log"></div>
-      </section>
-
-      <footer>
-        <span>Nothing runs until you approve the plan.</span>
-        <button id="new-task" type="button" hidden>Clear</button>
-      </footer>
-    </main>
-
-    <div id="live-status" class="sr-only" aria-live="polite"></div>
-
-    <template id="message-template">
-      <div class="message">
-        <span class="message-label"></span>
-        <div class="message-body"></div>
-      </div>
-    </template>
-
-    <template id="plan-template">
-      <article class="plan-card">
-        <div class="plan-heading">
-          <span>Ready to submit</span>
-          <span class="approval-badge">Approval required</span>
-        </div>
-        <h2 class="plan-title"></h2>
-        <dl>
-          <div><dt>App</dt><dd class="plan-target"></dd></div>
-          <div><dt>Task</dt><dd class="plan-action"></dd></div>
-        </dl>
-        <ol class="plan-steps" aria-label="Planned steps"></ol>
-        <div class="plan-actions">
-          <button class="confirm-button" type="button">Approve &amp; run</button>
-          <button class="cancel-button" type="button">Cancel</button>
-        </div>
-      </article>
-    </template>
-
-    <template id="progress-template">
-      <article class="progress-card">
-        <span class="spinner" aria-hidden="true"></span>
-        <div>
-          <strong class="progress-title">Starting…</strong>
-          <span class="progress-copy">Bolo is completing the approved task.</span>
-          <ol class="progress-steps" aria-label="Task progress"></ol>
-        </div>
-        <button class="stop-button" type="button">Stop</button>
-      </article>
-    </template>
-
-    <template id="result-template">
-      <article class="result-card">
-        <span class="check" aria-hidden="true">✓</span>
-        <div>
-          <strong class="result-title"></strong>
-          <span class="result-copy"></span>
-        </div>
-      </article>
-    </template>
-
-    <script type="module" src="/app.js"></script>
+    <div id="root"></div>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>
