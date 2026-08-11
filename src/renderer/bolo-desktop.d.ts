@@ -4,6 +4,7 @@ declare global {
   interface Window {
     boloDesktop: {
       setExpanded: (expanded: boolean) => void;
+      setIgnoreMouseEvents: (ignore: boolean) => void;
       hideWindow: () => void;
       onFocusCommand: (callback: () => void) => () => void;
       onNewCommand: (callback: () => void) => () => void;

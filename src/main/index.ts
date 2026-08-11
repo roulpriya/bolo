@@ -20,6 +20,9 @@ let mainWindow: BrowserWindow | null = null;
 let desktopService: DesktopService | null = null;
 let tray: Tray | null = null;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+const trayIconPath = fileURLToPath(
+  new URL("./assets/boloTemplate.png", import.meta.url)
+);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -100,12 +103,10 @@ function showWindow(reset = false) {
 }
 
 function createTray() {
-  const image = nativeImage.createFromDataURL(
-    "data:image/svg+xml;base64," +
-      Buffer.from(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="7" fill="none" stroke="black" stroke-width="2"/><circle cx="9" cy="9" r="2" fill="black"/></svg>'
-      ).toString("base64")
-  );
+  const image = nativeImage.createFromPath(trayIconPath);
+  if (image.isEmpty()) {
+    throw new Error(`Could not load tray icon: ${trayIconPath}`);
+  }
   image.setTemplateImage(true);
   tray = new Tray(image);
   tray.setToolTip("Bolo");
@@ -182,6 +183,16 @@ ipcMain.on(IPC.setExpanded, (event: IpcMainEvent, expanded: unknown) => {
     mainWindow.getSize()[0],
     ipcArgs.setExpanded.parse([expanded])[0] ? 520 : 140,
     true
+  );
+});
+
+ipcMain.on(IPC.setIgnoreMouseEvents, (event: IpcMainEvent, ignore: unknown) => {
+  if (!(isMainRenderer(event) && mainWindow)) {
+    return;
+  }
+  mainWindow.setIgnoreMouseEvents(
+    ipcArgs.setIgnoreMouseEvents.parse([ignore])[0],
+    { forward: true }
   );
 });
 

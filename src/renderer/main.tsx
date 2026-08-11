@@ -52,6 +52,20 @@ const friendlyError = (message: string) =>
   CONFIGURATION_ERROR_PATTERN.test(message)
     ? "Bolo needs its API keys configured before it can run this task."
     : message || "Something went wrong.";
+const workedFor = (run: Run) => {
+  const { createdAt: startedAt, finishedAt } = run;
+  if (!(startedAt && finishedAt)) {
+    return "Worked for a moment";
+  }
+  const elapsedSeconds = Math.max(
+    0,
+    Math.round((finishedAt - startedAt) / 1000)
+  );
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  const duration = minutes ? `${minutes}min ${seconds}sec` : `${seconds}sec`;
+  return `Worked for ${duration}`;
+};
 
 function App() {
   const [state, setState] = useState<AppState>("idle");
@@ -81,6 +95,8 @@ function App() {
   const speechUrl = useRef<string>("");
   const speechGeneration = useRef(0);
   const speechFinish = useRef<(() => void) | null>(null);
+  const ignoringMouseEvents = useRef<boolean | null>(null);
+  const runInputMode = useRef<"typed" | "voice">("typed");
 
   const addMessage = (
     kind: Message["kind"],
@@ -167,6 +183,23 @@ function App() {
     );
   }, [state]);
   useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const isVisiblePanel =
+        event.target instanceof Element &&
+        Boolean(
+          event.target.closest(".composer, .conversation, .recording-bar")
+        );
+      const shouldIgnore = !isVisiblePanel;
+      if (ignoringMouseEvents.current === shouldIgnore) {
+        return;
+      }
+      ignoringMouseEvents.current = shouldIgnore;
+      window.boloDesktop.setIgnoreMouseEvents(shouldIgnore);
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+  useEffect(() => {
     if (messages.length) {
       window.boloDesktop.setExpanded(true);
       requestAnimationFrame(() => {
@@ -179,6 +212,9 @@ function App() {
   }, [messages]);
   const focusInput = () => inputRef.current?.focus();
   const speak = async (text: string, languageCode = "en-IN") => {
+    if (runInputMode.current !== "voice") {
+      return;
+    }
     if (!text.trim()) {
       return;
     }
@@ -219,7 +255,7 @@ function App() {
   const completeRun = async (nextRun: Run) => {
     const result = nextRun.result || "The task is complete.";
     setState("completed");
-    finishProgress("Task complete");
+    finishProgress(workedFor(nextRun));
     if (streamedMessageId.current === null) {
       addMessage("bot", result);
     } else {
@@ -375,9 +411,11 @@ function App() {
     addMessage("user", event.transcript ?? "");
     if (voicePurpose.current === "command") {
       runId.current = event.runId ?? "";
+      runInputMode.current = "voice";
     }
     setState("running");
     setRun({ progress: "Working", toolActivity: [] });
+    addMessage("bot", "", true);
     schedulePoll(0);
   };
   const handleFailedVoice = (event: VoiceEvent) => {
@@ -441,10 +479,12 @@ function App() {
       if (["completed", "failed"].includes(state)) {
         resetTask();
       }
+      runInputMode.current = "typed";
       const started = await window.boloDesktop.startAgent(value);
       runId.current = started.id;
       setState("running");
       setRun({ progress: "Working", toolActivity: [] });
+      addMessage("bot", "", true);
       schedulePoll(0);
     } catch (error: unknown) {
       fail(error instanceof Error ? error.message : String(error));
@@ -471,6 +511,7 @@ function App() {
       cancelRecording().catch(() => undefined);
     }
     runId.current = "";
+    runInputMode.current = "typed";
     handledQuestionId.current = "";
     streamedMessageId.current = null;
     setRun(null);
@@ -535,7 +576,6 @@ function App() {
   }, []);
   const conversationProps = {
     messages,
-    onStop: stopEverything,
     reference: conversationRef,
     run,
   };
@@ -554,7 +594,9 @@ function App() {
       ).catch((error: unknown) => {
         fail(error instanceof Error ? error.message : String(error));
       }),
+    onStop: stopEverything,
     onSubmit: handleComposerSubmit,
+    showStop: Boolean(run && !run.finished),
   };
   return (
     <main aria-label="Bolo execution agent" className="palette">

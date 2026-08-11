@@ -1,3 +1,4 @@
+import { Mic, Send, Square } from "lucide-react";
 import type {
   ChangeEventHandler,
   FormEventHandler,
@@ -13,7 +14,9 @@ export function Composer({
   onChange,
   onKeyDown,
   onRecord,
+  onStop,
   onSubmit,
+  showStop,
 }: {
   canAnswer: boolean;
   canInput: boolean;
@@ -22,7 +25,9 @@ export function Composer({
   onChange: ChangeEventHandler<HTMLTextAreaElement>;
   onKeyDown: KeyboardEventHandler<HTMLTextAreaElement>;
   onRecord: () => void;
+  onStop: () => void;
   onSubmit: FormEventHandler<HTMLFormElement>;
+  showStop: boolean;
 }) {
   return (
     <form className="composer" onSubmit={onSubmit}>
@@ -50,19 +55,27 @@ export function Composer({
         title="Start voice"
         type="button"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path d="M12 14.5a3.5 3.5 0 0 0 3.5-3.5V6.5a3.5 3.5 0 1 0-7 0V11a3.5 3.5 0 0 0 3.5 3.5Zm6-3.5a6 6 0 0 1-12 0M12 17v3.5M8.5 20.5h7" />
-        </svg>
+        <Mic aria-hidden="true" />
       </button>
+      {showStop ? (
+        <button
+          aria-label="Stop task"
+          className="stop-button composer-stop-button"
+          onClick={onStop}
+          title="Stop task"
+          type="button"
+        >
+          <Square aria-hidden="true" />
+          Stop
+        </button>
+      ) : null}
       <button
         aria-label={canAnswer ? "Send answer" : "Run task"}
         className="send-button"
         hidden={!(input.trim() && canInput)}
         type="submit"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path d="m5 12 14-7-4 14-3.5-5.5L5 12Z" />
-        </svg>
+        <Send aria-hidden="true" />
       </button>
     </form>
   );

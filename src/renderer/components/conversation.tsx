@@ -1,15 +1,48 @@
 import type { RefObject } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Message, Run } from "../types";
 import { Progress } from "./progress";
 
+function AgentMarkdown({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      components={{
+        a: ({ children: linkChildren, href }) => (
+          <a href={href} rel="noopener noreferrer" target="_blank">
+            {linkChildren}
+          </a>
+        ),
+      }}
+      remarkPlugins={[remarkGfm]}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}
+
+function MessageContent({
+  message,
+  run,
+}: {
+  message: Message;
+  run: Run | null;
+}) {
+  if (message.progress) {
+    return <Progress run={run} />;
+  }
+  if (message.kind === "bot") {
+    return <AgentMarkdown>{message.text}</AgentMarkdown>;
+  }
+  return message.text;
+}
+
 export function Conversation({
   messages,
-  onStop,
   reference,
   run,
 }: {
   messages: Message[];
-  onStop: () => void;
   reference: RefObject<HTMLElement | null>;
   run: Run | null;
 }) {
@@ -22,11 +55,7 @@ export function Conversation({
               {message.kind === "user" ? "You" : "Bolo"}
             </span>
             <div className="message-body">
-              {message.progress ? (
-                <Progress onStop={onStop} run={run} />
-              ) : (
-                message.text
-              )}
+              <MessageContent message={message} run={run} />
             </div>
           </article>
         ))}
@@ -34,7 +63,7 @@ export function Conversation({
           <article className="message bot">
             <span className="message-label">Bolo</span>
             <div className="message-body">
-              <Progress onStop={onStop} run={run} />
+              <Progress run={run} />
             </div>
           </article>
         )}

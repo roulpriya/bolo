@@ -19,6 +19,7 @@ test("preload exposes only the direct agent and voice contract", async () => {
     "stopRun",
     "speech",
     "health",
+    "setIgnoreMouseEvents",
   ]) {
     assert.match(source, new RegExp(`\\b${method}\\b`));
   }

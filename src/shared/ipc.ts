@@ -14,6 +14,7 @@ export const IPC = {
   hideWindow: "hide-window",
   newCommand: "new-command",
   setExpanded: "set-expanded",
+  setIgnoreMouseEvents: "bolo:set-ignore-mouse-events",
   speech: "bolo:speech",
   startAgent: "bolo:start-agent",
   startVoice: "bolo:start-voice",
@@ -30,6 +31,7 @@ export const ipcArgs = {
   cancelVoice: z.tuple([id]),
   getRun: z.tuple([id]),
   setExpanded: z.tuple([z.boolean()]),
+  setIgnoreMouseEvents: z.tuple([z.boolean()]),
   speech: z.tuple([
     z.string().trim().min(1).max(600),
     z.string().trim().min(1).max(30).optional(),

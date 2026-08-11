@@ -45,6 +45,10 @@ test("uses a concise Pi-style tool prompt with system date and time", () => {
   assert.match(prompt, /- read:/);
   assert.match(prompt, /Use tools to do the work/);
   assert.match(prompt, /Be concise in your responses/);
+  assert.match(
+    prompt,
+    /Avoid Markdown unless it makes the response materially clearer/
+  );
   assert.match(prompt, /Current working directory: \/workspace/);
   assert.match(prompt, /System date:/);
   assert.match(prompt, /System time:/);

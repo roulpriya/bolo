@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("boloDesktop", {
   setExpanded(expanded) {
     ipcRenderer.send("set-expanded", Boolean(expanded));
   },
+  setIgnoreMouseEvents(ignore) {
+    ipcRenderer.send("bolo:set-ignore-mouse-events", ignore);
+  },
   speech: (text, languageCode) =>
     ipcRenderer.invoke("bolo:speech", text, languageCode),
   startAgent: (text) => ipcRenderer.invoke("bolo:start-agent", text),

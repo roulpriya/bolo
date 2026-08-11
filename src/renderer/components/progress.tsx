@@ -1,24 +1,22 @@
+import { Terminal } from "lucide-react";
+import { type ToggleEvent, useCallback, useEffect, useState } from "react";
 import type { Run, ToolActivity } from "../types";
 
 function ToolCall({ item }: { item: ToolActivity }) {
-  const timestamp = item.at
-    ? new Date(item.at).toLocaleString([], {
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-      })
-    : "";
+  const [isOpen, setIsOpen] = useState(false);
+  const handleToggle = useCallback((event: ToggleEvent<HTMLDetailsElement>) => {
+    setIsOpen(event.currentTarget.open);
+  }, []);
   if (item.kind !== "tool_call") {
     return (
       <div className="tool-activity">
         <span aria-hidden="true" className="tool-status-dot" />
         {item.detail}
-        <time>{timestamp}</time>
       </div>
     );
   }
   const state = item.status || "running";
+  const isBash = item.tool === "bash";
   let input: unknown = item.input;
   try {
     input = item.input ? JSON.parse(item.input) : null;
@@ -49,17 +47,26 @@ function ToolCall({ item }: { item: ToolActivity }) {
         JSON.stringify(input)
       : String(input || "");
   return (
-    <details className={`tool-call ${state}`} open={state === "running"}>
+    <details
+      className={`tool-call ${state}`}
+      onToggle={handleToggle}
+      open={isOpen}
+    >
       <summary>
-        <span aria-hidden="true" className="tool-status-dot" />
+        {isBash ? (
+          <Terminal aria-hidden="true" className="tool-icon" />
+        ) : (
+          <span aria-hidden="true" className="tool-status-dot" />
+        )}
         <span className="tool-call-main">
-          <strong>{labels[item.tool] || `Used ${item.tool}`}</strong>
+          <strong>
+            {isBash ? "Terminal" : labels[item.tool] || `Used ${item.tool}`}
+          </strong>
           {Boolean(preview) && (
             <code title={String(preview)}>{String(preview)}</code>
           )}
         </span>
         <span className="tool-call-state">{stateLabel}</span>
-        <time>{timestamp}</time>
       </summary>
       <div className="tool-call-content">
         {Boolean(item.input) && (
@@ -82,34 +89,48 @@ function ToolCall({ item }: { item: ToolActivity }) {
   );
 }
 
-export function Progress({
-  run,
-  onStop,
-}: {
-  run: Run | null;
-  onStop: () => void;
-}) {
+export function Progress({ run }: { run: Run | null }) {
+  const [isCompleteOpen, setIsCompleteOpen] = useState(true);
+  useEffect(() => {
+    if (run?.finished) {
+      setIsCompleteOpen(false);
+    }
+  }, [run?.finished]);
+  const handleCompleteToggle = useCallback(
+    (event: ToggleEvent<HTMLDetailsElement>) => {
+      setIsCompleteOpen(event.currentTarget.open);
+    },
+    []
+  );
+  const progressRow = (
+    <>
+      {!run?.finished && <span aria-hidden="true" className="spinner" />}
+      <strong>{run?.progress || "Working"}</strong>
+    </>
+  );
+  const toolTimeline = Boolean(run?.toolActivity?.length) && (
+    <section aria-label="Tool calls" className="tool-timeline">
+      {run.toolActivity?.map((item, index) => (
+        <ToolCall item={item} key={item.id || `${item.tool}-${index}`} />
+      ))}
+    </section>
+  );
+  if (run?.finished) {
+    return (
+      <details
+        className="progress-card progress-complete"
+        onToggle={handleCompleteToggle}
+        open={isCompleteOpen}
+      >
+        <summary className="progress-row">{progressRow}</summary>
+        {toolTimeline}
+      </details>
+    );
+  }
   return (
     <div className="progress-card">
-      <div className="progress-row">
-        {!run?.finished && <span aria-hidden="true" className="spinner" />}
-        <strong>{run?.progress || "Working"}</strong>
-        <button
-          className="stop-button"
-          disabled={run?.finished}
-          onClick={onStop}
-          type="button"
-        >
-          Stop
-        </button>
-      </div>
-      {Boolean(run?.toolActivity?.length) && (
-        <section aria-label="Tool calls" className="tool-timeline">
-          {run.toolActivity?.map((item, index) => (
-            <ToolCall item={item} key={item.id || `${item.tool}-${index}`} />
-          ))}
-        </section>
-      )}
+      <div className="progress-row">{progressRow}</div>
+      {toolTimeline}
     </div>
   );
 }

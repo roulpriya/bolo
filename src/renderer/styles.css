@@ -135,7 +135,7 @@ body.is-attention .composer-orb {
   padding: 12px 16px;
   margin: 20px 18px 0;
   overflow-y: auto;
-  background: rgba(22, 22, 26, 0.62);
+  background: rgba(22, 22, 26, 0.95);
   border-radius: 22px;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.35);
   -webkit-backdrop-filter: blur(34px) saturate(1.6);
@@ -150,11 +150,10 @@ body.is-attention .composer-orb {
 }
 
 .message {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 12px;
-  padding: 14px 4px;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 4px;
   animation: rise 180ms ease both;
 }
 
@@ -168,23 +167,139 @@ body.is-attention .composer-orb {
 }
 
 .message.user .message-label {
-  color: var(--accent-strong);
+  display: none;
 }
 .message-body {
   min-width: 0;
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+:where(.message.bot .message-body) > :first-child {
+  margin-top: 0;
+}
+
+:where(.message.bot .message-body) > :last-child {
+  margin-bottom: 0;
+}
+
+:where(.message.bot .message-body) h1,
+:where(.message.bot .message-body) h2,
+:where(.message.bot .message-body) h3,
+:where(.message.bot .message-body) h4,
+:where(.message.bot .message-body) h5,
+:where(.message.bot .message-body) h6 {
+  margin: 16px 0 6px;
+  line-height: 1.25;
+}
+
+:where(.message.bot .message-body) h1 {
+  font-size: 1.35em;
+}
+
+:where(.message.bot .message-body) h2 {
+  font-size: 1.2em;
+}
+
+:where(.message.bot .message-body) h3,
+:where(.message.bot .message-body) h4,
+:where(.message.bot .message-body) h5,
+:where(.message.bot .message-body) h6 {
+  font-size: 1.05em;
+}
+
+:where(.message.bot .message-body) p,
+:where(.message.bot .message-body) ul,
+:where(.message.bot .message-body) ol,
+:where(.message.bot .message-body) blockquote,
+:where(.message.bot .message-body) pre,
+:where(.message.bot .message-body) table {
+  margin: 8px 0;
+}
+
+:where(.message.bot .message-body) ul,
+:where(.message.bot .message-body) ol {
+  padding-left: 22px;
+}
+
+:where(.message.bot .message-body) li + li {
+  margin-top: 3px;
+}
+
+:where(.message.bot .message-body) a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+:where(.message.bot .message-body) code {
+  padding: 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+:where(.message.bot .message-body) pre {
+  max-width: 100%;
+  padding: 10px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.32);
+  border-radius: 8px;
+}
+
+:where(.message.bot .message-body) pre code {
+  padding: 0;
+  background: transparent;
+}
+
+:where(.message.bot .message-body) blockquote {
+  padding-left: 10px;
+  color: var(--muted);
+  border-left: 3px solid var(--accent-strong);
+}
+
+:where(.message.bot .message-body) table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+:where(.message.bot .message-body) th,
+:where(.message.bot .message-body) td {
+  padding: 5px 7px;
+  text-align: left;
+  border: 1px solid var(--line);
+}
+
+:where(.message.bot .message-body) th {
+  font-weight: 700;
+  background: var(--surface);
+}
+.message.user {
+  align-items: flex-end;
+}
+.message.user .message-body {
+  max-width: min(82%, 540px);
+  padding: 9px 13px;
+  color: #102018;
+  white-space: pre-wrap;
+  background: linear-gradient(135deg, #d1fae5, #86efac);
+  border-radius: 18px 18px 5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 .composer {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   gap: 12px;
   align-items: center;
   min-height: 54px;
   padding: 6px 10px 6px 18px;
   margin: 22px 18px;
-  background: rgba(22, 22, 26, 0.88);
+  background: rgba(22, 22, 26, 0.95);
   border-radius: 999px;
   box-shadow:
     0 5px 15px rgba(0, 0, 0, 0.4),
@@ -192,17 +307,6 @@ body.is-attention .composer-orb {
   -webkit-backdrop-filter: blur(34px) saturate(1.6);
   backdrop-filter: blur(34px) saturate(1.6);
   transition: box-shadow 150ms ease;
-}
-
-/* The pill itself is the focus target — a rectangular outline on the
-   plain textarea inside would break the seamless rounded shape. A
-   shadow's blur radius has to stay within the composer's own margin —
-   the window can't paint anything past its own pixel bounds, so a
-   shadow wider than the margin gets hard-clipped at the window edge. */
-.composer:focus-within {
-  box-shadow:
-    0 0 0 2px rgba(167, 243, 208, 0.5),
-    0 5px 15px rgba(0, 0, 0, 0.4);
 }
 
 textarea {
@@ -318,12 +422,45 @@ textarea::placeholder {
 .progress-row strong {
   font-size: 12px;
 }
+.progress-complete > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.progress-complete {
+  background: transparent;
+  border-color: transparent;
+}
+.progress-complete > summary::-webkit-details-marker {
+  display: none;
+}
+.progress-complete > summary::after {
+  margin-left: auto;
+  font-size: 16px;
+  color: #777781;
+  content: "›";
+  transition: transform 120ms ease;
+}
+.progress-complete[open] > summary::after {
+  transform: rotate(90deg);
+}
 .stop-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
   padding: 8px 10px;
   margin-left: auto;
   font-size: 11px;
   color: var(--muted);
   background: var(--surface-2);
+}
+.composer-stop-button {
+  margin-left: 0;
+  color: #ffd1d9;
+}
+.composer-stop-button svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
 }
 
 .tool-timeline {
@@ -399,19 +536,18 @@ textarea::placeholder {
   font-size: 10px;
   color: #8a8a94;
 }
-.tool-call time,
-.tool-activity time {
-  margin-left: 3px;
-  font-size: 9px;
-  color: #6f6f78;
-  white-space: nowrap;
-}
 .tool-status-dot {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   background: #72727c;
   border-radius: 50%;
+}
+.tool-icon {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--accent-strong);
 }
 .tool-call.running .tool-status-dot {
   background: var(--accent-strong);

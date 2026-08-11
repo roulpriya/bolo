@@ -32,8 +32,10 @@ export interface ToolActivity {
 }
 
 export interface Run {
+  createdAt?: number;
   error?: string;
   finished?: boolean;
+  finishedAt?: number | null;
   languageCode?: string;
   pendingQuestion?: PendingQuestion | null;
   progress?: string;
