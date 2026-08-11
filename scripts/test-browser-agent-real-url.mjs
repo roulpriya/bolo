@@ -12,7 +12,7 @@ const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 const evidenceDirectory = path.resolve(
   "artifacts",
   "browser-agent-real-url",
-  timestamp,
+  timestamp
 );
 await mkdir(evidenceDirectory, { recursive: true });
 
@@ -20,19 +20,19 @@ const activityLog = [];
 const networkLog = [];
 const questions = [];
 const run = {
+  abortController: new AbortController(),
+  currentTool: null,
   id: `browser-real-url-${crypto.randomUUID()}`,
   input: "Standalone real URL browser specialist test",
-  state: "running",
-  currentTool: null,
-  progress: "Starting real URL browser test",
   pendingQuestion: null,
+  progress: "Starting real URL browser test",
+  state: "running",
   toolActivity: activityLog,
-  abortController: new AbortController(),
 };
 
 const agentService = new AgentService({
-  workspaceDirectory: process.cwd(),
   browserProfileDirectory: path.join(evidenceDirectory, "profile"),
+  workspaceDirectory: process.cwd(),
 });
 const page = await agentService.browser.newPage();
 await page.context().addInitScript(() => {
@@ -55,26 +55,26 @@ await page.context().addInitScript(() => {
   document.addEventListener(
     "input",
     (event) => {
-      const target = event.target;
+      const { target } = event;
       if (target?.name === "my-text") {
         record({ action: "text-input", value: target.value });
       }
     },
-    true,
+    true
   );
   document.addEventListener(
     "change",
     (event) => {
-      const target = event.target;
+      const { target } = event;
       if (target?.name === "my-select") {
         record({
           action: "select",
-          value: target.value,
           label: target.selectedOptions?.[0]?.textContent?.trim() || "",
+          value: target.value,
         });
       }
     },
-    true,
+    true
   );
   document.addEventListener(
     "click",
@@ -82,21 +82,23 @@ await page.context().addInitScript(() => {
       if (event.target?.matches?.('button[type="submit"]')) {
         record({
           action: "submit",
-          textValue: document.querySelector('[name="my-text"]')?.value || "",
           selectValue:
             document.querySelector('[name="my-select"]')?.value || "",
+          textValue: document.querySelector('[name="my-text"]')?.value || "",
         });
       }
     },
-    true,
+    true
   );
 });
 page.on("response", (response) => {
-  if (response.request().resourceType() !== "document") return;
+  if (response.request().resourceType() !== "document") {
+    return;
+  }
   networkLog.push({
-    url: response.url(),
-    status: response.status(),
     at: Date.now(),
+    status: response.status(),
+    url: response.url(),
   });
 });
 await page.goto("about:blank");
@@ -113,10 +115,10 @@ try {
 2. Select "Two" in the dropdown labelled "Dropdown (select)".
 3. Submit the form. This is a public Selenium test fixture and submission is approved.
 4. Inspect a fresh screenshot and return status "verified" only if the resulting page visibly says "Received!".`,
-    async (prompt, kind) => {
-      questions.push({ prompt, kind, answer: "yes", at: Date.now() });
+    (prompt, kind) => {
+      questions.push({ answer: "yes", at: Date.now(), kind, prompt });
       return "yes";
-    },
+    }
   );
 
   const finalPage = await agentService.browser.newPage();
@@ -127,30 +129,32 @@ try {
       actions = window.name.startsWith(prefix)
         ? JSON.parse(window.name.slice(prefix.length))
         : [];
-    } catch {}
+    } catch {
+      // A missing or malformed action log is equivalent to no recorded actions.
+    }
     return {
-      url: location.href,
-      title: document.title,
-      heading: document.querySelector("h1")?.textContent?.trim() || "",
-      bodyText: document.body?.innerText?.trim() || "",
       actions,
+      bodyText: document.body?.innerText?.trim() || "",
+      heading: document.querySelector("h1")?.textContent?.trim() || "",
+      title: document.title,
+      url: location.href,
     };
   });
   await finalPage.screenshot({
-    path: path.join(evidenceDirectory, "after-submission.png"),
     fullPage: true,
+    path: path.join(evidenceDirectory, "after-submission.png"),
   });
   await writeFile(
     path.join(evidenceDirectory, "final-page.html"),
     await finalPage.content(),
-    "utf8",
+    "utf8"
   );
 
   const submittedAction = browserEvidence.actions.find(
     (entry) =>
       entry.action === "submit" &&
       entry.textValue === expectedText &&
-      entry.selectValue === "2",
+      entry.selectValue === "2"
   );
   const domPassed =
     new URL(browserEvidence.url).hostname === "www.selenium.dev" &&
@@ -158,41 +162,41 @@ try {
     browserEvidence.bodyText.includes("Received!") &&
     Boolean(submittedAction);
   report = {
-    passed: domPassed && modelResult?.status === "verified",
-    runId: run.id,
-    model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
-    targetUrl,
-    modelResult,
-    browserEvidence,
-    networkLog,
-    questions,
     activityCount: activityLog.length,
+    browserEvidence,
     evidenceDirectory,
+    model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
+    modelResult,
+    networkLog,
+    passed: domPassed && modelResult?.status === "verified",
+    questions,
+    runId: run.id,
+    targetUrl,
   };
 } catch (error) {
   const livePage = await agentService.browser.newPage().catch(() => null);
   await livePage
     ?.screenshot({
-      path: path.join(evidenceDirectory, "failure.png"),
       fullPage: true,
+      path: path.join(evidenceDirectory, "failure.png"),
     })
-    .catch(() => {});
+    .catch(() => undefined);
   report = {
-    passed: false,
-    runId: run.id,
-    model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
-    targetUrl,
-    error: String(error?.stack || error),
-    networkLog,
-    questions,
     activityCount: activityLog.length,
+    error: String(error?.stack || error),
     evidenceDirectory,
+    model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
+    networkLog,
+    passed: false,
+    questions,
+    runId: run.id,
+    targetUrl,
   };
 } finally {
   await writeFile(
     path.join(evidenceDirectory, "activity.json"),
     JSON.stringify(activityLog, null, 2),
-    "utf8",
+    "utf8"
   );
   await agentService.close();
 }
@@ -200,7 +204,7 @@ try {
 await writeFile(
   path.join(evidenceDirectory, "report.json"),
   JSON.stringify(report, null, 2),
-  "utf8",
+  "utf8"
 );
 console.log(JSON.stringify(report, null, 2));
 process.exitCode = report.passed ? 0 : 1;

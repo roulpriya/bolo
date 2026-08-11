@@ -1,23 +1,30 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { DesktopService } from "../src/desktop-service.js";
-import { RunHistory } from "../src/run-history.js";
+import { homedir } from "node:os";
+import { test } from "vitest";
+import { DesktopService } from "../src/main/services/desktop-service.ts";
+import { RunHistory } from "../src/main/state/run-history.ts";
 
 class FakeAgent {
-  async browserAvailable() {
+  browserAvailable() {
     return true;
+  }
+
+  createReminder({ title, scheduledFor }) {
+    return { scheduledFor, title };
   }
 
   execute(run, askUser) {
     if (run.input === "ask") {
       return askUser("Which city?", "input").then(
-        (answer) => `Using ${answer}.`,
+        (answer) => `Using ${answer}.`
       );
     }
     return Promise.resolve(`Completed: ${run.input}`);
   }
 
-  async close() {}
+  close() {
+    return Promise.resolve();
+  }
 }
 
 class FakeVoice {
@@ -27,24 +34,27 @@ class FakeVoice {
   }
 
   sendChunk(id, bytes) {
-    this.chunk = { id, bytes };
+    this.chunk = { bytes, id };
   }
 
-  cancel() {}
-  close() {}
+  cancel() {
+    return Promise.resolve();
+  }
+
+  close() {
+    return Promise.resolve();
+  }
 }
 
 function service({ sarvam } = {}) {
   return new DesktopService({
     agentService: new FakeAgent(),
-    voiceService: new FakeVoice(),
     history: new RunHistory(),
-    sarvam:
-      sarvam ||
-      {
-        translateText: async (text) => ({ text }),
-        synthesize: async () => Buffer.from("audio"),
-      },
+    sarvam: sarvam || {
+      synthesize: async () => Buffer.from("audio"),
+      translateText: async (text) => ({ text }),
+    },
+    voiceService: new FakeVoice(),
   });
 }
 
@@ -59,6 +69,15 @@ test("starts a typed request immediately without a plan or approval token", asyn
   assert.equal(run.result, "Completed: Do the task");
   assert.equal("plan" in run, false);
   assert.equal("approvalToken" in run, false);
+});
+
+test("uses the user home directory as the default workspace", () => {
+  const desktop = new DesktopService({
+    agentService: new FakeAgent(),
+    history: new RunHistory(),
+    voiceService: new FakeVoice(),
+  });
+  assert.equal(desktop.workspaceDirectory, homedir());
 });
 
 test("question tool pauses and resumes the same run", async () => {
@@ -76,23 +95,45 @@ test("question tool pauses and resumes the same run", async () => {
   assert.equal(run.result, "Using Pune.");
 });
 
+test("asks for a reminder title without waiting for the planning model", async () => {
+  const desktop = service();
+  const started = desktop.startAgent("Set a reminder for 9 PM.");
+  await new Promise((resolve) => setImmediate(resolve));
+  let run = desktop.getRun(started.id);
+  assert.equal(run.state, "waiting_for_user");
+  assert.match(
+    run.pendingQuestion.prompt,
+    /What should I remind you about at 9:00 PM\?/
+  );
+
+  await desktop.answerRun(started.id, run.pendingQuestion.id, "Call Maya");
+  await new Promise((resolve) => setImmediate(resolve));
+  run = desktop.getRun(started.id);
+  assert.equal(run.state, "completed");
+  assert.match(run.result, /Reminder set for 9:00 PM: Call Maya/);
+  assert.equal(
+    run.toolActivity.find((item) => item.tool === "create_reminder")?.status,
+    "completed"
+  );
+});
+
 test("localizes follow-up questions, typed answers, and final results", async () => {
-  const translations = [];
+  const translations: unknown[] = [];
   const desktop = service({
     sarvam: {
-      translateText: async (text, options) => {
-        translations.push({ text, options });
+      synthesize: async () => Buffer.from("audio"),
+      translateText: (text, options) => {
+        translations.push({ options, text });
         const outputs = {
-          "Which city?": "कौन सा शहर?",
           Pune: "Pune",
           "Using Pune.": "पुणे का उपयोग कर रहा हूँ।",
+          "Which city?": "कौन सा शहर?",
         };
         return {
-          text: outputs[text] || text,
           sourceLanguageCode: options.sourceLanguageCode,
+          text: outputs[text] || text,
         };
       },
-      synthesize: async () => Buffer.from("audio"),
     },
   });
   const started = desktop.startAgent("ask", { languageCode: "hi-IN" });
@@ -115,20 +156,22 @@ test("localizes follow-up questions, typed answers, and final results", async ()
       ["en-IN", "hi-IN"],
       ["hi-IN", "en-IN"],
       ["en-IN", "hi-IN"],
-    ],
+    ]
   );
 });
 
 test("routes a translated voice command with its detected language", async () => {
   const desktop = service();
-  let translatedEvent;
+  let translatedEvent: Record<string, string> | null = null;
   desktop.on("voice-event", (event) => {
-    if (event.type === "translated") translatedEvent = event;
+    if (event.type === "translated") {
+      translatedEvent = event;
+    }
   });
   await desktop.commitVoiceTranslation(
     { id: "voice-1", purpose: "command" },
     "Open Notes",
-    "mr-IN",
+    "mr-IN"
   );
   const run = desktop.getRun(translatedEvent.runId);
   assert.equal(translatedEvent.languageCode, "mr-IN");
@@ -142,10 +185,10 @@ test("rejects stale answers and malformed voice requests", () => {
     () =>
       desktop.startVoice({
         purpose: "answer",
-        runId: "x",
         questionId: "y",
+        runId: "x",
       }),
-    /no longer waiting/i,
+    /no longer waiting/i
   );
   assert.throws(() => desktop.sendVoiceChunk("x", new Uint8Array()), /audio/i);
 });

@@ -9,11 +9,15 @@ export class RunHistory {
   }
 
   async load() {
-    if (!this.file) return;
+    if (!this.file) {
+      return;
+    }
     try {
       const stored = JSON.parse(await readFile(this.file, "utf8"));
       for (const run of Array.isArray(stored) ? stored : []) {
-        if (!run?.id) continue;
+        if (!run.id) {
+          continue;
+        }
         if (["running", "waiting_for_user"].includes(run.state)) {
           run.state = "failed";
           run.error = "Bolo restarted before this task finished.";
@@ -22,7 +26,9 @@ export class RunHistory {
         this.items.set(run.id, run);
       }
     } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
     }
   }
 
@@ -34,7 +40,7 @@ export class RunHistory {
     this.items.set(run.id, structuredClone(run));
     if (this.file) {
       this.pendingWrite = this.pendingWrite
-        .catch(() => {})
+        .catch(() => undefined)
         .then(() => this.persist());
     }
   }

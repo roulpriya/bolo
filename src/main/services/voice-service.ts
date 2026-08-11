@@ -6,6 +6,7 @@ const START_SPEECH_TIMEOUT_MS = 15_000;
 const MAX_TURN_MS = 60_000;
 const MAX_SESSION_AUDIO_BYTES = 4 * 1024 * 1024;
 const TURN_COMMIT_DELAY_MS = 700;
+const noop = () => undefined;
 
 function apiKey() {
   if (!process.env.SARVAM_API_KEY) {
@@ -32,8 +33,12 @@ function streamUrl() {
 function messageKind(message) {
   const direct = String(message?.type || "").toLowerCase();
   const signal = String(message?.data?.signal_type || "").toLowerCase();
-  if (direct === "speech_start" || signal === "start_speech") return "speech-start";
-  if (direct === "speech_end" || signal === "end_speech") return "speech-end";
+  if (direct === "speech_start" || signal === "start_speech") {
+    return "speech-start";
+  }
+  if (direct === "speech_end" || signal === "end_speech") {
+    return "speech-end";
+  }
   if (
     direct === "data" ||
     direct === "translation" ||
@@ -51,7 +56,7 @@ function translatedText(message) {
       message?.data?.transcript ||
       message?.translation ||
       message?.transcript ||
-      "",
+      ""
   ).trim();
 }
 
@@ -61,15 +66,15 @@ function detectedLanguage(message) {
       message?.data?.source_language_code ||
       message?.language_code ||
       message?.source_language_code ||
-      "",
+      ""
   ).trim();
 }
 
 export class VoiceService {
   constructor({
     WebSocketImpl = WebSocket,
-    onEvent = () => {},
-    onTranslation = () => {},
+    onEvent = noop,
+    onTranslation = noop,
     startSpeechTimeoutMs = START_SPEECH_TIMEOUT_MS,
     maxTurnMs = MAX_TURN_MS,
     turnCommitDelayMs = TURN_COMMIT_DELAY_MS,
@@ -84,21 +89,23 @@ export class VoiceService {
   }
 
   start(options) {
-    if (this.session) throw new Error("A microphone session is already active.");
+    if (this.session) {
+      throw new Error("A microphone session is already active.");
+    }
     const session = {
       id: crypto.randomUUID(),
       ...options,
-      socket: null,
-      heardSpeech: false,
-      inSpeech: false,
-      committed: false,
-      closed: false,
-      transcripts: [],
-      languageCode: "",
-      commitTimer: null,
       audioBytes: 0,
+      closed: false,
+      commitTimer: null,
+      committed: false,
+      heardSpeech: Boolean(false),
+      inSpeech: false,
+      languageCode: "",
       pendingChunks: [],
+      socket: null,
       timers: new Set(),
+      transcripts: [],
     };
     this.session = session;
 
@@ -107,13 +114,17 @@ export class VoiceService {
     });
     session.socket = socket;
     socket.on("open", () => {
-      if (!this.isActive(session.id)) return;
+      if (!this.isActive(session.id)) {
+        return;
+      }
       for (const bytes of session.pendingChunks.splice(0)) {
         this.sendAudio(session, bytes);
       }
       this.emit(session, "ready");
       this.addTimer(session, this.startSpeechTimeoutMs, () => {
-        if (!session.heardSpeech) this.fail(session, "No speech was detected.");
+        if (!session.heardSpeech) {
+          this.fail(session, "No speech was detected.");
+        }
       });
     });
     socket.on("message", (raw) => this.receive(session, raw));
@@ -137,7 +148,9 @@ export class VoiceService {
   }
 
   clearCommitTimer(session) {
-    if (!session.commitTimer) return;
+    if (!session.commitTimer) {
+      return;
+    }
     clearTimeout(session.commitTimer);
     session.timers.delete(session.commitTimer);
     session.commitTimer = null;
@@ -153,14 +166,10 @@ export class VoiceService {
       return;
     }
     this.clearCommitTimer(session);
-    session.commitTimer = this.addTimer(
-      session,
-      this.turnCommitDelayMs,
-      () => {
-        session.commitTimer = null;
-        this.commitTranslation(session);
-      },
-    );
+    session.commitTimer = this.addTimer(session, this.turnCommitDelayMs, () => {
+      session.commitTimer = null;
+      this.commitTranslation(session);
+    });
   }
 
   commitTranslation(session) {
@@ -175,9 +184,7 @@ export class VoiceService {
     session.committed = true;
     const transcript = session.transcripts.join(" ").trim();
     Promise.resolve()
-      .then(() =>
-        this.onTranslation(session, transcript, session.languageCode),
-      )
+      .then(() => this.onTranslation(session, transcript, session.languageCode))
       .catch((error) => {
         this.emit(session, "failed", {
           error: String(error?.message || error).slice(0, 600),
@@ -193,7 +200,7 @@ export class VoiceService {
   }
 
   sendChunk(sessionId, bytes) {
-    const session = this.session;
+    const { session } = this;
     if (!session || session.id !== sessionId || session.closed) {
       throw new Error("Voice session not found.");
     }
@@ -214,16 +221,18 @@ export class VoiceService {
       JSON.stringify({
         audio: {
           data: bytes.toString("base64"),
-          sample_rate: "16000",
           encoding: "audio/wav",
+          sample_rate: "16000",
         },
-      }),
+      })
     );
   }
 
   receive(session, raw) {
-    if (!this.isActive(session.id) || session.committed) return;
-    let message;
+    if (!this.isActive(session.id) || session.committed) {
+      return;
+    }
+    let message: unknown = null;
     try {
       message = JSON.parse(raw.toString());
     } catch {
@@ -243,12 +252,15 @@ export class VoiceService {
       this.scheduleCommit(session);
       return;
     }
-    if (kind !== "translation") return;
+    if (kind !== "translation") {
+      return;
+    }
     const transcript = translatedText(message);
-    if (!transcript) return;
+    if (!transcript) {
+      return;
+    }
     session.transcripts.push(transcript);
-    session.languageCode =
-      detectedLanguage(message) || session.languageCode;
+    session.languageCode = detectedLanguage(message) || session.languageCode;
     this.scheduleCommit(session);
   }
 
@@ -257,7 +269,9 @@ export class VoiceService {
   }
 
   fail(session, error) {
-    if (!this.isActive(session.id) || session.committed) return;
+    if (!this.isActive(session.id) || session.committed) {
+      return;
+    }
     session.committed = true;
     this.clearCommitTimer(session);
     this.emit(session, "failed", { error: String(error).slice(0, 600) });
@@ -265,7 +279,7 @@ export class VoiceService {
   }
 
   cancel(sessionId) {
-    const session = this.session;
+    const { session } = this;
     if (!session || session.id !== sessionId) {
       throw new Error("Voice session not found.");
     }
@@ -284,11 +298,17 @@ export class VoiceService {
   }
 
   finishClose(session) {
-    if (session.closed) return;
+    if (session.closed) {
+      return;
+    }
     session.closed = true;
-    for (const timer of session.timers) clearTimeout(timer);
+    for (const timer of session.timers) {
+      clearTimeout(timer);
+    }
     session.timers.clear();
-    if (this.session?.id === session.id) this.session = null;
+    if (this.session?.id === session.id) {
+      this.session = null;
+    }
     this.emit(session, "closed");
   }
 
@@ -301,8 +321,8 @@ export class VoiceService {
 }
 
 export const voiceProtocol = {
-  streamUrl,
-  messageKind,
-  translatedText,
   detectedLanguage,
+  messageKind,
+  streamUrl,
+  translatedText,
 };

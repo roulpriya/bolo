@@ -1,5 +1,6 @@
 const SARVAM_BASE_URL = "https://api.sarvam.ai";
 const LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}-IN$/i;
+const DEVANAGARI_PATTERN = /[\u0900-\u097f]/;
 const FEMALE_TTS_SPEAKERS = new Set([
   "ritu",
   "priya",
@@ -22,22 +23,24 @@ export const DEFAULT_TTS_PACE = 1.12;
 
 export function normalizeLanguageCode(value, fallback = "en-IN") {
   const code = String(value || "").trim();
-  if (!LANGUAGE_CODE_PATTERN.test(code)) return fallback;
+  if (!LANGUAGE_CODE_PATTERN.test(code)) {
+    return fallback;
+  }
   const [language] = code.split("-");
   return `${language.toLowerCase()}-IN`;
 }
 
 export function speechLanguage(text) {
-  return /[\u0900-\u097f]/.test(String(text || "")) ? "hi-IN" : "en-IN";
+  return DEVANAGARI_PATTERN.test(String(text || "")) ? "hi-IN" : "en-IN";
 }
 
 export function ttsSpeaker(
-  configuredSpeaker = process.env.SARVAM_TTS_SPEAKER || DEFAULT_TTS_SPEAKER,
+  configuredSpeaker = process.env.SARVAM_TTS_SPEAKER || DEFAULT_TTS_SPEAKER
 ) {
   const speaker = String(configuredSpeaker).trim().toLowerCase();
   if (!FEMALE_TTS_SPEAKERS.has(speaker)) {
     throw new Error(
-      `SARVAM_TTS_SPEAKER must be a supported female Bulbul v3 voice; received "${speaker}".`,
+      `SARVAM_TTS_SPEAKER must be a supported female Bulbul v3 voice; received "${speaker}".`
     );
   }
   return speaker;
@@ -77,11 +80,13 @@ export async function translateText(
     sourceLanguageCode = "auto",
     targetLanguageCode = "en-IN",
     fetchImpl = globalThis.fetch,
-  } = {},
+  } = {}
 ) {
   const text = String(input || "").trim();
-  if (!text) throw new Error("No text supplied for translation.");
-  if (text.length > 2_000) {
+  if (!text) {
+    throw new Error("No text supplied for translation.");
+  }
+  if (text.length > 2000) {
     throw new Error("Sarvam translation input exceeds 2,000 characters.");
   }
   const target = normalizeLanguageCode(targetLanguageCode);
@@ -90,56 +95,38 @@ export async function translateText(
       ? "auto"
       : normalizeLanguageCode(sourceLanguageCode);
   if (source !== "auto" && source === target) {
-    return { text, sourceLanguageCode: source };
+    return { sourceLanguageCode: source, text };
   }
 
   const response = await fetchImpl(`${SARVAM_BASE_URL}/translate`, {
-    method: "POST",
+    body: JSON.stringify({
+      input: text,
+      mode: "formal",
+      model: source === "auto" ? "mayura:v1" : "sarvam-translate:v1",
+      source_language_code: source,
+      target_language_code: target,
+    }),
     headers: {
       "api-subscription-key": apiKey(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      input: text,
-      source_language_code: source,
-      target_language_code: target,
-      model: source === "auto" ? "mayura:v1" : "sarvam-translate:v1",
-      mode: "formal",
-    }),
+    method: "POST",
   });
   if (!response.ok) {
     throw new Error(await errorMessage(response, "Text translation failed."));
   }
   const data = await response.json();
   const translated = String(data.translated_text || "").trim();
-  if (!translated) throw new Error("Sarvam returned an empty translation.");
-  return {
-    text: translated,
-    sourceLanguageCode: normalizeLanguageCode(data.source_language_code, source),
-  };
-}
-
-export async function transcribe(buffer, mimeType = "audio/webm") {
-  const form = new FormData();
-  const extension = mimeType.includes("mp4") ? "m4a" : "webm";
-  form.append("file", new Blob([buffer], { type: mimeType }), `bolo.${extension}`);
-  form.append("model", "saaras:v3");
-  // The supported command naturally mixes Hindi and English words such as
-  // “reminder set karo”, so Saaras' code-mixed mode preserves it more reliably.
-  form.append("mode", "codemix");
-
-  const response = await fetch(`${SARVAM_BASE_URL}/speech-to-text`, {
-    method: "POST",
-    headers: { "api-subscription-key": apiKey() },
-    body: form,
-  });
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Speech could not be understood."));
+  if (!translated) {
+    throw new Error("Sarvam returned an empty translation.");
   }
-  const data = await response.json();
-  const transcript = data.transcript?.trim();
-  if (!transcript) throw new Error("Sarvam returned an empty transcript.");
-  return transcript;
+  return {
+    sourceLanguageCode: normalizeLanguageCode(
+      data.source_language_code,
+      source
+    ),
+    text: translated,
+  };
 }
 
 export async function synthesize(
@@ -149,28 +136,32 @@ export async function synthesize(
     speaker = ttsSpeaker(),
     pace = ttsPace(),
     targetLanguageCode = speechLanguage(text),
-  } = {},
+  } = {}
 ) {
   const response = await fetchImpl(`${SARVAM_BASE_URL}/text-to-speech`, {
-    method: "POST",
+    body: JSON.stringify({
+      model: "bulbul:v3",
+      output_audio_codec: "wav",
+      pace,
+      speaker,
+      speech_sample_rate: 24_000,
+      target_language_code: normalizeLanguageCode(targetLanguageCode),
+      text,
+    }),
     headers: {
       "api-subscription-key": apiKey(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      text,
-      target_language_code: normalizeLanguageCode(targetLanguageCode),
-      speaker,
-      pace,
-      speech_sample_rate: 24000,
-      model: "bulbul:v3",
-      output_audio_codec: "wav",
-    }),
+    method: "POST",
   });
   if (!response.ok) {
-    throw new Error(await errorMessage(response, "Spoken response is unavailable."));
+    throw new Error(
+      await errorMessage(response, "Spoken response is unavailable.")
+    );
   }
   const data = await response.json();
-  if (!data.audios?.[0]) throw new Error("Sarvam returned no audio.");
+  if (!data.audios?.[0]) {
+    throw new Error("Sarvam returned no audio.");
+  }
   return Buffer.from(data.audios[0], "base64");
 }

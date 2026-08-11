@@ -1,0 +1,562 @@
+:root {
+  --bg: #151519;
+  --surface: rgba(255, 255, 255, 0.075);
+  --surface-2: rgba(255, 255, 255, 0.13);
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #f5f5f7;
+  --muted: #9999a2;
+  --accent: #a7f3d0;
+  --accent-strong: #34d399;
+  --danger: #fb7185;
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  min-width: 600px;
+  min-height: 100%;
+  margin: 0;
+  background: transparent;
+}
+body {
+  overflow: hidden;
+  color: var(--text);
+}
+button,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 126px;
+}
+
+.quiet-button,
+.icon-button,
+.send-button,
+.stop-button {
+  -webkit-app-region: no-drag;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 650;
+}
+
+.quiet-button {
+  justify-self: end;
+  padding: 7px 9px;
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.quiet-button:hover,
+.icon-button:hover {
+  background: var(--surface-2);
+}
+
+.composer-orb {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  background: conic-gradient(
+    from 150deg,
+    #19d5ff,
+    #7565ff,
+    #ff72b3,
+    #ffc45c,
+    #19d5ff
+  );
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(102, 104, 255, 0.45);
+  animation: orb-breathe 4s ease-in-out infinite;
+}
+.composer-orb::before {
+  position: absolute;
+  inset: 2px;
+  content: "";
+  background:
+    radial-gradient(
+      circle at 35% 28%,
+      rgba(255, 255, 255, 0.8),
+      transparent 24%
+    ),
+    rgba(19, 19, 29, 0.42);
+  border-radius: inherit;
+  backdrop-filter: blur(4px);
+}
+.composer-orb i {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(
+    circle at 35% 30%,
+    #fff,
+    #a8e9ff 19%,
+    #7868ff 48%,
+    #202034 74%
+  );
+  border-radius: 50%;
+  box-shadow: 0 0 8px #a1dfff;
+}
+
+body.is-listening .composer-orb {
+  animation: orb-pulse 1.1s ease-in-out infinite;
+}
+body.is-working .composer-orb {
+  animation: orb-spin 1.8s linear infinite;
+}
+body.is-attention .composer-orb {
+  animation:
+    orb-breathe 4s ease-in-out infinite,
+    orb-alert 1.3s ease-in-out infinite;
+}
+
+.conversation {
+  min-height: 0;
+  padding: 12px 16px;
+  margin: 20px 18px 0;
+  overflow-y: auto;
+  background: rgba(22, 22, 26, 0.62);
+  border-radius: 22px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(34px) saturate(1.6);
+  backdrop-filter: blur(34px) saturate(1.6);
+}
+
+.conversation:not([hidden]) {
+  flex: 1;
+}
+.chat-log {
+  display: grid;
+}
+
+.message {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+  animation: rise 180ms ease both;
+}
+
+.message-label {
+  padding-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.message.user .message-label {
+  color: var(--accent-strong);
+}
+.message-body {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 54px;
+  padding: 6px 10px 6px 18px;
+  margin: 22px 18px;
+  background: rgba(22, 22, 26, 0.88);
+  border-radius: 999px;
+  box-shadow:
+    0 5px 15px rgba(0, 0, 0, 0.4),
+    inset 0 1px rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(34px) saturate(1.6);
+  backdrop-filter: blur(34px) saturate(1.6);
+  transition: box-shadow 150ms ease;
+}
+
+/* The pill itself is the focus target — a rectangular outline on the
+   plain textarea inside would break the seamless rounded shape. A
+   shadow's blur radius has to stay within the composer's own margin —
+   the window can't paint anything past its own pixel bounds, so a
+   shadow wider than the margin gets hard-clipped at the window edge. */
+.composer:focus-within {
+  box-shadow:
+    0 0 0 2px rgba(167, 243, 208, 0.5),
+    0 5px 15px rgba(0, 0, 0, 0.4);
+}
+
+textarea {
+  width: 100%;
+  max-height: 92px;
+  padding: 10px 0;
+  overflow-y: auto;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--text);
+  resize: none;
+  outline: 0;
+  background: transparent;
+  border: 0;
+}
+
+textarea::placeholder {
+  color: #74747d;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #c9c8d2;
+  background: transparent;
+}
+.icon-button svg,
+.send-button svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.send-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: #19191c;
+  background: linear-gradient(135deg, #f7f7fb, #bfc1c9);
+}
+.send-button svg {
+  width: 17px;
+  fill: currentColor;
+  stroke-width: 1.2;
+}
+
+/* Progressive disclosure: the submit action only exists once there's
+   something to submit — Enter always works, so hide it from layout
+   entirely rather than just dimming it (a reserved-but-invisible grid
+   column would leave the mic button looking off-center). */
+.send-button[hidden] {
+  display: none;
+}
+.icon-button:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
+.recording-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 52px;
+  padding: 9px 12px;
+  margin: 10px 16px 0;
+  background: var(--surface);
+  border: 1px solid rgba(251, 113, 133, 0.2);
+  border-radius: 13px;
+}
+
+.recording-bar[hidden] {
+  display: none;
+}
+.recording-bar .quiet-button {
+  margin-left: auto;
+}
+.recording-pulse {
+  width: 9px;
+  height: 9px;
+  background: var(--danger);
+  border-radius: 50%;
+  animation: pulse 1s ease-in-out infinite;
+}
+.recording-bar strong {
+  font-size: 12px;
+}
+.recording-bar > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.progress-card {
+  padding: 10px 12px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.progress-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.progress-row strong {
+  font-size: 12px;
+}
+.stop-button {
+  padding: 8px 10px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.tool-timeline {
+  display: grid;
+  gap: 4px;
+  max-height: 300px;
+  padding-top: 8px;
+  margin-top: 9px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tool-call,
+.tool-activity {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.tool-call:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.tool-call summary,
+.tool-activity {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tool-call summary {
+  cursor: pointer;
+  list-style: none;
+}
+.tool-call summary::-webkit-details-marker {
+  display: none;
+}
+.tool-call summary::after {
+  order: 5;
+  margin-left: 2px;
+  font-size: 16px;
+  color: #777781;
+  content: "›";
+  transition: transform 120ms ease;
+}
+.tool-call[open] summary::after {
+  transform: rotate(90deg);
+}
+.tool-call-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.tool-call-main strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: #dddde4;
+}
+.tool-call-main code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: #aaaab4;
+  white-space: nowrap;
+}
+.tool-call-state {
+  margin-left: auto;
+  font-size: 10px;
+  color: #8a8a94;
+}
+.tool-call time,
+.tool-activity time {
+  margin-left: 3px;
+  font-size: 9px;
+  color: #6f6f78;
+  white-space: nowrap;
+}
+.tool-status-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: #72727c;
+  border-radius: 50%;
+}
+.tool-call.running .tool-status-dot {
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.13);
+  animation: tool-working 1.1s ease-in-out infinite;
+}
+.tool-call.completed .tool-status-dot {
+  background: var(--accent-strong);
+}
+.tool-call.failed .tool-status-dot {
+  background: var(--danger);
+}
+
+.tool-call-content {
+  display: grid;
+  gap: 9px;
+  padding: 0 9px 10px 24px;
+}
+.tool-call-content section {
+  display: grid;
+  gap: 4px;
+}
+.tool-call-content section > span {
+  font-size: 9px;
+  font-weight: 700;
+  color: #888893;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.tool-call-content pre {
+  max-height: 150px;
+  padding: 8px;
+  margin: 0;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #c9c9d0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.32);
+  border-radius: 6px;
+}
+.tool-pending {
+  margin: 0;
+  font-size: 10px;
+  font-style: italic;
+  color: #85858e;
+}
+
+.spinner {
+  width: 19px;
+  height: 19px;
+  border: 2px solid var(--surface-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.shortcut-hint {
+  margin: 0 0 13px;
+  font-size: 10px;
+  color: #777781;
+  text-align: center;
+}
+kbd {
+  padding: 1px 3px;
+  font-family: inherit;
+  font-size: 9px;
+  color: #a9a9b1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(0, 0, 0, 0);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes tool-working {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.045);
+    filter: brightness(1.12);
+  }
+}
+@keyframes orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.16);
+  }
+}
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes orb-alert {
+  0%,
+  100% {
+    filter: saturate(1) hue-rotate(0deg);
+  }
+  50% {
+    filter: saturate(1.7) hue-rotate(-30deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+  }
+}

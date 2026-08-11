@@ -5,6 +5,9 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 120_000;
 const DEFAULT_OUTPUT_LENGTH = 64_000;
 const MAX_OUTPUT_LENGTH = 256_000;
+const SENSITIVE_ENVIRONMENT_PATTERN =
+  /(?:API|TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|PRIVATE).*KEY|(?:API|TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|SSH_ASKPASS|GPG_AGENT)/i;
+const noop = () => undefined;
 
 const CATASTROPHIC_PATTERNS = [
   /\brm\s+(?:-[^\s]*r[^\s]*f|-[^\s]*f[^\s]*r)\s+(?:\/(?:\*|\s|$)|~(?:\/?\*|\s|$)|\$HOME(?:\/?\*|\s|$))/i,
@@ -40,11 +43,8 @@ function cleanEnvironment(environment = process.env) {
   return Object.fromEntries(
     Object.entries(environment).filter(
       ([name, value]) =>
-        value !== undefined &&
-        !/(?:API|TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|PRIVATE).*KEY|(?:API|TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|AUTH|SSH_ASKPASS|GPG_AGENT)/i.test(
-          name,
-        ),
-    ),
+        value !== undefined && !SENSITIVE_ENVIRONMENT_PATTERN.test(name)
+    )
   );
 }
 
@@ -56,7 +56,7 @@ function bounded(value, fallback, max) {
 }
 
 export class LocalShell {
-  constructor({ cwd, signal, onActivity = () => {} }) {
+  constructor({ cwd, signal, onActivity = noop }) {
     this.cwd = cwd;
     this.signal = signal;
     this.onActivity = onActivity;
@@ -68,26 +68,29 @@ export class LocalShell {
       throw new Error(`Shell accepts between 1 and ${MAX_COMMANDS} commands.`);
     }
     if (shellRisk(commands) === "blocked") {
-      throw new Error("That shell command is blocked because it could damage the machine or expose secrets.");
+      throw new Error(
+        "That shell command is blocked because it could damage the machine or expose secrets."
+      );
     }
     const timeoutMs = bounded(
       action.timeoutMs,
       DEFAULT_TIMEOUT_MS,
-      MAX_TIMEOUT_MS,
+      MAX_TIMEOUT_MS
     );
     const maxOutputLength = bounded(
       action.maxOutputLength,
       DEFAULT_OUTPUT_LENGTH,
-      MAX_OUTPUT_LENGTH,
+      MAX_OUTPUT_LENGTH
     );
-    const output = [];
+    const output: unknown[] = [];
     for (const command of commands) {
       this.onActivity("Running a local command");
       output.push(
-        await this.runCommand(String(command), timeoutMs, maxOutputLength),
+        // biome-ignore lint/performance/noAwaitInLoops: Commands intentionally execute sequentially in the supplied order.
+        await this.runCommand(String(command), timeoutMs, maxOutputLength)
       );
     }
-    return { output, maxOutputLength };
+    return { maxOutputLength, output };
   }
 
   runCommand(command, timeoutMs, maxOutputLength) {
@@ -127,11 +130,11 @@ export class LocalShell {
           return;
         }
         resolve({
-          stdout,
-          stderr,
           outcome: timedOut
             ? { type: "timeout" }
-            : { type: "exit", exitCode: code },
+            : { exitCode: code, type: "exit" },
+          stderr,
+          stdout,
         });
       });
     });

@@ -1,18 +1,22 @@
+import { unlink } from "node:fs/promises";
 import {
   captureScreenshot,
   executeAction,
   permissionStatus,
   screenSize,
-} from "./mac.js";
-import { unlink } from "node:fs/promises";
+} from "../platform/mac.ts";
 
 const MAX_ACTIONS = 20;
 const MAX_SAME_ACTION = 2;
 const MAX_WAIT_ACTIONS = 1;
 
 function stageFor(actionCount) {
-  if (actionCount < 3) return "Starting agent";
-  if (actionCount < 14) return "Working";
+  if (actionCount < 3) {
+    return "Starting agent";
+  }
+  if (actionCount < 14) {
+    return "Working";
+  }
   return "Checking result";
 }
 
@@ -56,7 +60,7 @@ export class LocalMacComputer {
     const permissions = await permissionStatus();
     if (!permissions.accessibilityTrusted) {
       throw new Error(
-        "Accessibility is denied for Bolo Mac Control. Run `npm run local-agent:permissions`, then use the + button to add the revealed “Bolo Mac Control.app” and enable it. Restart Bolo afterward.",
+        "Accessibility is denied for Bolo Mac Control. Run `npm run local-agent:permissions`, then use the + button to add the revealed “Bolo Mac Control.app” and enable it. Restart Bolo afterward."
       );
     }
     const size = await screenSize();
@@ -70,27 +74,37 @@ export class LocalMacComputer {
   // Aborting instead lets the current tool call finish with a valid
   // screenshot, and the next model request fails cleanly as an AbortError.
   halt(message) {
-    if (this.halted) return;
+    if (this.halted) {
+      return;
+    }
     this.halted = true;
     console.log(
-      `[computer:${this.runState.id}] halt after ${this.actionCount} actions (${this.waitActions} waits): ${message}`,
+      `[computer:${this.runState.id}] halt after ${this.actionCount} actions (${this.waitActions} waits): ${message}`
     );
     this.runState.internalStopReason = message;
     this.runState.abortController.abort();
   }
 
   lastScreenshotBase64() {
-    return this.lastScreenshot ? this.lastScreenshot.buffer.toString("base64") : "";
+    return this.lastScreenshot
+      ? this.lastScreenshot.buffer.toString("base64")
+      : "";
   }
 
   async ensureScreenshot() {
-    if (!this.lastScreenshot) await this.screenshot();
+    if (!this.lastScreenshot) {
+      await this.screenshot();
+    }
     return this.lastScreenshot;
   }
 
   async perform(action) {
-    if (this.runState.cancelled) this.halt("Stopped by the user.");
-    if (this.halted) return;
+    if (this.runState.cancelled) {
+      this.halt("Stopped by the user.");
+    }
+    if (this.halted) {
+      return;
+    }
 
     this.actionCount += 1;
     if (this.actionCount > MAX_ACTIONS) {
@@ -101,7 +115,9 @@ export class LocalMacComputer {
     if (action.type === "wait") {
       this.waitActions += 1;
       if (this.waitActions > MAX_WAIT_ACTIONS) {
-        this.halt("The computer agent waited without making progress, so Bolo stopped.");
+        this.halt(
+          "The computer agent waited without making progress, so Bolo stopped."
+        );
         return;
       }
     }
@@ -116,9 +132,13 @@ export class LocalMacComputer {
     }
 
     const screenshot = await this.ensureScreenshot();
-    if (this.halted) return;
+    if (this.halted) {
+      return;
+    }
     this.runState.stage = stageFor(this.actionCount);
-    console.log(`[computer:${this.runState.id}] action ${this.actionCount}: ${describeAction(action)}`);
+    console.log(
+      `[computer:${this.runState.id}] action ${this.actionCount}: ${describeAction(action)}`
+    );
     try {
       await executeAction(action, screenshot, this.displaySize);
     } catch (error) {
@@ -129,13 +149,17 @@ export class LocalMacComputer {
   }
 
   async screenshot() {
-    if (this.runState.cancelled) this.halt("Stopped by the user.");
-    if (this.halted) return this.lastScreenshotBase64();
+    if (this.runState.cancelled) {
+      this.halt("Stopped by the user.");
+    }
+    if (this.halted) {
+      return this.lastScreenshotBase64();
+    }
 
-    let screenshot;
+    let screenshot: Awaited<ReturnType<typeof captureScreenshot>> | null = null;
     try {
       screenshot = await captureScreenshot(
-        `run-${this.runState.id}-agent-${this.actionCount}`,
+        `run-${this.runState.id}-agent-${this.actionCount}`
       );
     } catch (error) {
       this.halt(error.message);
@@ -146,13 +170,15 @@ export class LocalMacComputer {
     this.lastScreenshot = screenshot;
     this.screenshotFiles.add(screenshot.file);
     this.runState.finalScreenshotPath = screenshot.file;
-    console.log(`[computer:${this.runState.id}] screenshot -> ${screenshot.file}`);
+    console.log(
+      `[computer:${this.runState.id}] screenshot -> ${screenshot.file}`
+    );
     return this.lastScreenshotBase64();
   }
 
   async cleanup() {
     await Promise.allSettled(
-      [...this.screenshotFiles].map((file) => unlink(file)),
+      [...this.screenshotFiles].map((file) => unlink(file))
     );
     this.screenshotFiles.clear();
     this.lastScreenshot = null;
@@ -160,29 +186,29 @@ export class LocalMacComputer {
   }
 
   async click(x, y, button = "left") {
-    await this.perform({ type: "click", x, y, button });
+    await this.perform({ button, type: "click", x, y });
   }
 
   async doubleClick(x, y) {
-    await this.perform({ type: "double_click", x, y, button: "left" });
+    await this.perform({ button: "left", type: "double_click", x, y });
   }
 
   async scroll(x, y, scrollX, scrollY) {
     await this.perform({
+      scroll_x: scrollX,
+      scroll_y: scrollY,
       type: "scroll",
       x,
       y,
-      scroll_x: scrollX,
-      scroll_y: scrollY,
     });
   }
 
   async type(text) {
-    await this.perform({ type: "type", text });
+    await this.perform({ text, type: "type" });
   }
 
   async wait() {
-    await this.perform({ type: "wait", ms: 1000 });
+    await this.perform({ ms: 1000, type: "wait" });
   }
 
   async move(x, y) {
@@ -190,13 +216,13 @@ export class LocalMacComputer {
   }
 
   async keypress(keys) {
-    await this.perform({ type: "keypress", keys });
+    await this.perform({ keys, type: "keypress" });
   }
 
   async drag(path) {
     await this.perform({
-      type: "drag",
       path: path.map(([x, y]) => ({ x, y })),
+      type: "drag",
     });
   }
 }

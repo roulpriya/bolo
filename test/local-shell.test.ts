@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { LocalShell, shellRisk } from "../src/local-shell.js";
+import { test } from "vitest";
+import { LocalShell, shellRisk } from "../src/main/agent/local-shell.ts";
 
 test("classifies routine, consequential, and catastrophic shell commands", () => {
   assert.equal(shellRisk(["pwd"]), "routine");
@@ -20,8 +20,8 @@ test("runs bounded local commands and captures their output", async () => {
   });
   assert.equal(result.output[0].stdout, "hello");
   assert.deepEqual(result.output[0].outcome, {
-    type: "exit",
     exitCode: 0,
+    type: "exit",
   });
 });
 
@@ -30,8 +30,5 @@ test("refuses catastrophic commands before spawning them", async () => {
     cwd: process.cwd(),
     signal: new AbortController().signal,
   });
-  await assert.rejects(
-    () => shell.run({ commands: ["rm -rf /"] }),
-    /blocked/i,
-  );
+  await assert.rejects(() => shell.run({ commands: ["rm -rf /"] }), /blocked/i);
 });

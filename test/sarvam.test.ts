@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
-  DEFAULT_TTS_SPEAKER,
   DEFAULT_TTS_PACE,
-  synthesize,
-  speechLanguage,
+  DEFAULT_TTS_SPEAKER,
   normalizeLanguageCode,
+  speechLanguage,
+  synthesize,
   translateText,
   ttsPace,
   ttsSpeaker,
-} from "../src/sarvam.js";
+} from "../src/main/services/sarvam.ts";
 
 test("uses Simran as Bolo's default light female voice", () => {
   assert.equal(DEFAULT_TTS_SPEAKER, "simran");
@@ -24,18 +24,18 @@ test("rejects a configured voice that is not a supported female Bulbul v3 speake
 
 test("sends the selected female voice to Sarvam TTS", async () => {
   process.env.SARVAM_API_KEY = "sarvam_test";
-  let request;
+  let request: { options: RequestInit; url: string } | null = null;
   const audio = await synthesize("नमस्ते", {
-    speaker: "priya",
-    fetchImpl: async (url, options) => {
-      request = { url, options };
+    fetchImpl: (url, options) => {
+      request = { options, url };
       return {
-        ok: true,
         json: async () => ({
           audios: [Buffer.from("test-audio").toString("base64")],
         }),
+        ok: true,
       };
     },
+    speaker: "priya",
   });
 
   assert.equal(request.url, "https://api.sarvam.ai/text-to-speech");
@@ -60,20 +60,20 @@ test("normalizes detected BCP-47 language codes", () => {
 
 test("translates text with explicit source and target languages", async () => {
   process.env.SARVAM_API_KEY = "sarvam_test";
-  let request;
+  let request: { options: RequestInit; url: string } | null = null;
   const translated = await translateText("Which city?", {
-    sourceLanguageCode: "en-IN",
-    targetLanguageCode: "hi-IN",
-    fetchImpl: async (url, options) => {
-      request = { url, options };
+    fetchImpl: (url, options) => {
+      request = { options, url };
       return {
-        ok: true,
         json: async () => ({
-          translated_text: "कौन सा शहर?",
           source_language_code: "en-IN",
+          translated_text: "कौन सा शहर?",
         }),
+        ok: true,
       };
     },
+    sourceLanguageCode: "en-IN",
+    targetLanguageCode: "hi-IN",
   });
   const body = JSON.parse(request.options.body);
   assert.equal(request.url, "https://api.sarvam.ai/translate");

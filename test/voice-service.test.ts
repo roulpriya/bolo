@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import { EventEmitter } from "node:events";
-import { voiceProtocol, VoiceService } from "../src/voice-service.js";
+import { test } from "vitest";
+import {
+  VoiceService,
+  voiceProtocol,
+} from "../src/main/services/voice-service.ts";
 
 class FakeSocket extends EventEmitter {
   static OPEN = 1;
@@ -46,16 +49,16 @@ test("uses the normal Sarvam VAD boundary for natural speaking pauses", () => {
 
 test("accumulates speech across a brief pause and commits exactly once", async () => {
   process.env.SARVAM_API_KEY = "sarvam_test";
-  const events = [];
-  const translations = [];
+  const events: string[] = [];
+  const translations: Array<{ languageCode: string; transcript: string }> = [];
   const voice = new VoiceService({
-    WebSocketImpl: FakeSocket,
+    maxTurnMs: 10_000,
     onEvent: (event) => events.push(event.type),
     onTranslation: (_session, transcript, languageCode) =>
-      translations.push({ transcript, languageCode }),
+      translations.push({ languageCode, transcript }),
     startSpeechTimeoutMs: 10_000,
-    maxTurnMs: 10_000,
     turnCommitDelayMs: 20,
+    WebSocketImpl: FakeSocket,
   });
   const { sessionId } = voice.start({ purpose: "command" });
   voice.sendChunk(sessionId, Buffer.from([1, 2]));
@@ -67,48 +70,48 @@ test("accumulates speech across a brief pause and commits exactly once", async (
   FakeSocket.instance.emit(
     "message",
     JSON.stringify({
-      type: "events",
       data: { signal_type: "START_SPEECH" },
-    }),
+      type: "events",
+    })
   );
   FakeSocket.instance.emit(
     "message",
     JSON.stringify({
-      type: "events",
       data: { signal_type: "END_SPEECH" },
-    }),
-  );
-  FakeSocket.instance.emit(
-    "message",
-    JSON.stringify({
-      type: "data",
-      data: { transcript: "Open", language_code: "hi-IN" },
-    }),
-  );
-  FakeSocket.instance.emit(
-    "message",
-    JSON.stringify({
       type: "events",
+    })
+  );
+  FakeSocket.instance.emit(
+    "message",
+    JSON.stringify({
+      data: { language_code: "hi-IN", transcript: "Open" },
+      type: "data",
+    })
+  );
+  FakeSocket.instance.emit(
+    "message",
+    JSON.stringify({
       data: { signal_type: "START_SPEECH" },
-    }),
-  );
-  FakeSocket.instance.emit(
-    "message",
-    JSON.stringify({
       type: "events",
-      data: { signal_type: "END_SPEECH" },
-    }),
+    })
   );
   FakeSocket.instance.emit(
     "message",
     JSON.stringify({
+      data: { signal_type: "END_SPEECH" },
+      type: "events",
+    })
+  );
+  FakeSocket.instance.emit(
+    "message",
+    JSON.stringify({
+      data: { language_code: "hi-IN", transcript: "Notes" },
       type: "data",
-      data: { transcript: "Notes", language_code: "hi-IN" },
-    }),
+    })
   );
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.deepEqual(translations, [
-    { transcript: "Open Notes", languageCode: "hi-IN" },
+    { languageCode: "hi-IN", transcript: "Open Notes" },
   ]);
   assert.ok(events.includes("speech-start"));
   assert.ok(events.includes("closed"));
@@ -117,23 +120,23 @@ test("accumulates speech across a brief pause and commits exactly once", async (
 test("recognizes all supported Sarvam event shapes", () => {
   assert.equal(
     voiceProtocol.messageKind({
-      type: "events",
       data: { signal_type: "END_SPEECH" },
+      type: "events",
     }),
-    "speech-end",
+    "speech-end"
   );
   assert.equal(
     voiceProtocol.translatedText({
-      type: "translation",
       data: { translation: "hello" },
+      type: "translation",
     }),
-    "hello",
+    "hello"
   );
   assert.equal(
     voiceProtocol.detectedLanguage({
+      data: { language_code: "ta-IN", transcript: "hello" },
       type: "data",
-      data: { transcript: "hello", language_code: "ta-IN" },
     }),
-    "ta-IN",
+    "ta-IN"
   );
 });

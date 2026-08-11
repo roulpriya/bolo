@@ -11,26 +11,26 @@ const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 const evidenceDirectory = path.resolve(
   "artifacts",
   "browser-agent-e2e",
-  timestamp,
+  timestamp
 );
 const profileDirectory = path.join(evidenceDirectory, "profile");
 await mkdir(evidenceDirectory, { recursive: true });
 
 const activityLog = [];
 const run = {
+  abortController: new AbortController(),
+  currentTool: null,
   id: `browser-e2e-${crypto.randomUUID()}`,
   input: "Standalone browser specialist test",
-  state: "running",
-  currentTool: null,
-  progress: "Starting standalone browser test",
   pendingQuestion: null,
+  progress: "Starting standalone browser test",
+  state: "running",
   toolActivity: activityLog,
-  abortController: new AbortController(),
 };
 
 const agentService = new AgentService({
-  workspaceDirectory: process.cwd(),
   browserProfileDirectory: profileDirectory,
+  workspaceDirectory: process.cwd(),
 });
 
 const page = await agentService.browser.newPage();
@@ -86,13 +86,13 @@ await page.setContent(`<!doctype html>
 </html>`);
 
 await page.screenshot({
-  path: path.join(evidenceDirectory, "before.png"),
   fullPage: true,
+  path: path.join(evidenceDirectory, "before.png"),
 });
 await writeFile(
   path.join(evidenceDirectory, "fixture.html"),
   await page.content(),
-  "utf8",
+  "utf8"
 );
 
 let report;
@@ -104,58 +104,59 @@ try {
 2. Type exactly "${expectedText}" into the Verification phrase field.
 3. Click "Verify".
 4. Inspect a fresh screenshot and return status "verified" only if the page visibly says "PASS".`,
-    async (prompt) => {
-      throw new Error(`Unexpected user question during deterministic test: ${prompt}`);
-    },
+    (prompt) => {
+      throw new Error(
+        `Unexpected user question during deterministic test: ${prompt}`
+      );
+    }
   );
 
   const finalPage = await agentService.browser.newPage();
   const domEvidence = await finalPage.evaluate((expected) => {
     const result = document.querySelector("#result")?.textContent?.trim() || "";
-    const value =
-      document.querySelector("#verification")?.value?.trim() || "";
+    const value = document.querySelector("#verification")?.value?.trim() || "";
     return {
-      title: document.title,
-      result,
-      value,
       passed: result === "PASS" && value === expected,
+      result,
+      title: document.title,
+      value,
     };
   }, expectedText);
   await finalPage.screenshot({
-    path: path.join(evidenceDirectory, "after.png"),
     fullPage: true,
+    path: path.join(evidenceDirectory, "after.png"),
   });
 
   report = {
-    passed: domEvidence.passed && modelResult?.status === "verified",
-    runId: run.id,
+    activityCount: activityLog.length,
+    domEvidence,
+    evidenceDirectory,
     model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
     modelResult,
-    domEvidence,
-    activityCount: activityLog.length,
-    evidenceDirectory,
+    passed: domEvidence.passed && modelResult?.status === "verified",
+    runId: run.id,
   };
 } catch (error) {
   const livePage = await agentService.browser.newPage().catch(() => null);
   await livePage
     ?.screenshot({
-      path: path.join(evidenceDirectory, "failure.png"),
       fullPage: true,
+      path: path.join(evidenceDirectory, "failure.png"),
     })
-    .catch(() => {});
+    .catch(() => undefined);
   report = {
+    activityCount: activityLog.length,
+    error: String(error?.stack || error),
+    evidenceDirectory,
+    model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
     passed: false,
     runId: run.id,
-    model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
-    error: String(error?.stack || error),
-    activityCount: activityLog.length,
-    evidenceDirectory,
   };
 } finally {
   await writeFile(
     path.join(evidenceDirectory, "activity.json"),
     JSON.stringify(activityLog, null, 2),
-    "utf8",
+    "utf8"
   );
   await agentService.close();
 }
@@ -163,7 +164,7 @@ try {
 await writeFile(
   path.join(evidenceDirectory, "report.json"),
   JSON.stringify(report, null, 2),
-  "utf8",
+  "utf8"
 );
 console.log(JSON.stringify(report, null, 2));
 process.exitCode = report.passed ? 0 : 1;

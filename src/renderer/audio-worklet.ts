@@ -1,11 +1,24 @@
+declare const sampleRate: number;
+declare const registerProcessor: (
+  name: string,
+  processor: typeof AudioWorkletProcessor
+) => void;
+declare class AudioWorkletProcessor {
+  readonly port: MessagePort;
+}
+
 class BoloPcmProcessor extends AudioWorkletProcessor {
   pending = [];
   sourceChunkSize = Math.max(1, Math.round(sampleRate / 10));
 
   process(inputs) {
     const channel = inputs[0]?.[0];
-    if (!channel) return true;
-    for (const sample of channel) this.pending.push(sample);
+    if (!channel) {
+      return true;
+    }
+    for (const sample of channel) {
+      this.pending.push(sample);
+    }
     while (this.pending.length >= this.sourceChunkSize) {
       const source = this.pending.splice(0, this.sourceChunkSize);
       const output = new Int16Array(1600);
@@ -18,7 +31,7 @@ class BoloPcmProcessor extends AudioWorkletProcessor {
           total += source[sourceIndex] || 0;
         }
         const value = Math.max(-1, Math.min(1, total / (end - start)));
-        output[index] = value < 0 ? value * 0x8000 : value * 0x7fff;
+        output[index] = value < 0 ? value * 0x80_00 : value * 0x7f_ff;
       }
       this.port.postMessage(output.buffer, [output.buffer]);
     }

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "composite": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo/test.tsbuildinfo",
+    "allowImportingTsExtensions": true,
+    "strict": false,
+    "noCheck": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strictNullChecks": true
+  },
+  "include": ["test/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

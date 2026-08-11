@@ -1,38 +1,45 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   BrowserPageComputer,
   LocalBrowserManager,
-} from "../src/local-browser.js";
+} from "../src/main/agent/local-browser.ts";
 
 function pageWithScreenshot(screenshot) {
   return {
+    bringToFront: () => Promise.resolve(),
     closed: false,
     isClosed() {
       return this.closed;
     },
     screenshot,
-    bringToFront: async () => {},
   };
 }
 
 test("browser computer reacquires a page after its target closes", async () => {
-  const first = pageWithScreenshot(async function () {
+  const first = pageWithScreenshot(function () {
     this.closed = true;
-    throw new Error("page.screenshot: Target page, context or browser has been closed");
+    throw new Error(
+      "page.screenshot: Target page, context or browser has been closed"
+    );
   });
-  const replacement = pageWithScreenshot(async () => Buffer.from("replacement"));
+  const replacement = pageWithScreenshot(async () =>
+    Buffer.from("replacement")
+  );
   let acquisitions = 0;
   const computer = new BrowserPageComputer(first, {
     manager: {
-      async newPage() {
+      newPage() {
         acquisitions += 1;
         return replacement;
       },
     },
   });
 
-  assert.equal(await computer.screenshot(), Buffer.from("replacement").toString("base64"));
+  assert.equal(
+    await computer.screenshot(),
+    Buffer.from("replacement").toString("base64")
+  );
   assert.equal(acquisitions, 1);
 });
 
@@ -40,72 +47,73 @@ test("browser computer navigates safe URLs and extracts page evidence", async ()
   let navigatedTo = "";
   const page = {
     ...pageWithScreenshot(async () => Buffer.from("page")),
-    async goto(url) {
+    evaluate: async () => ({
+      text: "Visible page text",
+      title: "Example",
+      url: navigatedTo,
+    }),
+    goto(url) {
       navigatedTo = url;
       return { status: () => 200 };
     },
-    url: () => navigatedTo,
     title: async () => "Example",
-    evaluate: async () => ({
-      url: navigatedTo,
-      title: "Example",
-      text: "Visible page text",
-    }),
+    url: () => navigatedTo,
   };
   const computer = new BrowserPageComputer(page);
 
   assert.deepEqual(await computer.navigate("https://example.com/test"), {
-    url: "https://example.com/test",
     status: 200,
     title: "Example",
+    url: "https://example.com/test",
   });
   assert.deepEqual(await computer.extractPage(), {
-    url: "https://example.com/test",
-    title: "Example",
     text: "Visible page text",
+    title: "Example",
+    url: "https://example.com/test",
   });
   await assert.rejects(
     computer.navigate("file:///etc/passwd"),
-    /safe HTTP or HTTPS URL/,
+    /safe HTTP or HTTPS URL/
   );
   await assert.rejects(
     computer.navigate("https://user:secret@example.com"),
-    /safe HTTP or HTTPS URL/,
+    /safe HTTP or HTTPS URL/
   );
 });
 
 test("browser manager relaunches a closed persistent context", async () => {
   let launches = 0;
-  const contexts = [];
+  const contexts: unknown[] = [];
   const chromiumImpl = {
     executablePath: () => process.execPath,
-    async launchPersistentContext() {
+    launchPersistentContext() {
       launches += 1;
       const listeners = new Map();
       const page = pageWithScreenshot(async () => Buffer.from("page"));
       const context = {
-        closed: false,
+        close() {
+          this.closed = Boolean(true);
+          listeners.get("close")?.();
+          return Promise.resolve();
+        },
+        closed: Boolean(false),
+        on(name, listener) {
+          listeners.set(name, listener);
+        },
         pages() {
           if (this.closed) {
             throw new Error("Target page, context or browser has been closed");
           }
           return [page];
         },
-        on(name, listener) {
-          listeners.set(name, listener);
-        },
-        async close() {
-          this.closed = true;
-          listeners.get("close")?.();
-        },
       };
       contexts.push(context);
-      return context;
+      return Promise.resolve(context);
     },
   };
   const manager = new LocalBrowserManager({
-    profileDirectory: "/tmp/bolo-browser-test",
     chromiumImpl,
+    profileDirectory: "/tmp/bolo-browser-test",
   });
 
   await manager.newPage();

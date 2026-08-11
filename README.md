@@ -6,9 +6,9 @@ and pause: Sarvam translates the turn to English, records the detected source
 language, and Bolo immediately starts working. Follow-up questions and final
 responses are translated and spoken in that same language.
 
-The agent can ask spoken follow-up questions, run local shell commands, search
-the web, operate a dedicated local browser, and use macOS Computer Use as a
-fallback for desktop-only work.
+The agent can ask spoken follow-up questions; read, write, and edit workspace
+files; run local bash commands; search the web; operate a dedicated local
+browser; and use macOS Computer Use as a fallback for desktop-only work.
 
 ## Setup
 

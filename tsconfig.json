@@ -1,17 +1,10 @@
 {
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.test.json" }
+  ],
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "jsx": "react-jsx",
-    "rootDir": ".",
-    "outDir": "dist",
-    "strict": false,
-    "noCheck": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": ["src/**/*.ts", "electron/**/*.ts", "test/**/*.ts"],
-  "exclude": ["dist", "node_modules"]
+    "strictNullChecks": true
+  }
 }
