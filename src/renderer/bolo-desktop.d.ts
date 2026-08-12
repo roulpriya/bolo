@@ -1,5 +1,17 @@
 import type { VoiceStartOptions } from "../shared/ipc.ts";
 
+interface McpServer {
+  args: string[];
+  command: string;
+  enabled: boolean;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  id: string;
+  name: string;
+  transport: "stdio" | "streamable-http" | "sse";
+  url: string;
+}
+
 declare global {
   interface Window {
     boloDesktop: {
@@ -9,6 +21,10 @@ declare global {
       onFocusCommand: (callback: () => void) => () => void;
       onNewCommand: (callback: () => void) => () => void;
       health: () => Promise<unknown>;
+      getMcpServers: () => Promise<McpServer[]>;
+      startMcpOAuth: (id: string) => Promise<{ ok: true }>;
+      saveMcpServers: (servers: McpServer[]) => Promise<McpServer[]>;
+      openSettings: () => Promise<{ ok: true }>;
       startVoice: (
         options: VoiceStartOptions
       ) => Promise<{ sessionId: string }>;

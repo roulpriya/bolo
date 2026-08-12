@@ -46,10 +46,11 @@ export function Conversation({
   reference: RefObject<HTMLElement | null>;
   run: Run | null;
 }) {
+  const visibleMessages = messages.filter((message) => !message.progress);
   return (
     <section className="conversation" hidden={!messages.length} ref={reference}>
       <div aria-live="polite" className="chat-log">
-        {messages.map((message) => (
+        {visibleMessages.map((message) => (
           <article className={`message ${message.kind}`} key={message.id}>
             <span className="message-label">
               {message.kind === "user" ? "You" : "Bolo"}
@@ -59,14 +60,14 @@ export function Conversation({
             </div>
           </article>
         ))}
-        {run && !messages.some((message) => message.progress) && (
+        {run ? (
           <article className="message bot">
             <span className="message-label">Bolo</span>
             <div className="message-body">
               <Progress run={run} />
             </div>
           </article>
-        )}
+        ) : null}
       </div>
     </section>
   );

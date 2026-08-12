@@ -12,7 +12,7 @@ const MAX_WAIT_ACTIONS = 1;
 
 function stageFor(actionCount) {
   if (actionCount < 3) {
-    return "Starting agent";
+    return "Working";
   }
   if (actionCount < 14) {
     return "Working";

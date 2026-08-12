@@ -2,6 +2,11 @@ import {
   Agent,
   tool as agentTool,
   computerTool,
+  connectMcpServers,
+  getAllMcpTools,
+  MCPServerSSE,
+  MCPServerStdio,
+  MCPServerStreamableHttp,
   MemorySession,
   Runner,
   webSearchTool,
@@ -15,6 +20,7 @@ import { LocalShell, shellRisk } from "./local-shell.ts";
 
 const planningModel = process.env.OPENAI_AGENT_MODEL || "gpt-5.6-terra";
 const computerModel = process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6";
+const MCP_REQUEST_TIMEOUT_MS = 180_000;
 const AFFIRMATIVE_PATTERN =
   /^(?:yes|y|confirm|proceed|approve|haan|han|हाँ|जी हाँ)\b/i;
 const noop = () => undefined;
@@ -144,7 +150,14 @@ export function buildBoloInstructions(workspaceDirectory, now = new Date()) {
     month: "long",
     year: "numeric",
   });
-  return `You are an assistant operating inside Bolo, a general-purpose AI assistant.
+  const systemClockTime = systemTime.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short",
+  });
+  return `You are an expert coding assistant operating inside Bolo, a general-purpose AI assistant.
   You help users by reading files, executing commands, editing code, writing new files, and completing browser or desktop tasks.
 
 Available tools:
@@ -157,6 +170,7 @@ Available tools:
 - computer_use: Complete a desktop-only task in visible macOS UI.
 - create_reminder: Create a macOS reminder.
 - ask_user_question: Ask one necessary question or request confirmation.
+- MCP tools: Tools provided by the enabled MCP servers in Settings, when configured.
 
 Guidelines:
 - Use tools to do the work. Do not merely describe commands or edits the user could run.
@@ -170,7 +184,8 @@ Guidelines:
 - Avoid Markdown unless it makes the response materially clearer. Be concise in your responses. State what you completed and show workspace file paths clearly.
 
 Current working directory: ${workspaceDirectory}
-Today's date: ${systemDate}`;
+System date: ${systemDate}
+System time: ${systemClockTime}`;
 }
 
 function questionTool(run, askUser) {
@@ -190,8 +205,15 @@ function questionTool(run, askUser) {
 }
 
 export class AgentService {
-  constructor({ workspaceDirectory, browserProfileDirectory }) {
+  constructor({
+    workspaceDirectory,
+    browserProfileDirectory,
+    mcpOAuthProvider,
+    mcpServersProvider,
+  }) {
     this.workspaceDirectory = workspaceDirectory;
+    this.mcpServersProvider = mcpServersProvider || (async () => []);
+    this.mcpOAuthProvider = mcpOAuthProvider;
     this.browser = new LocalBrowserManager({
       profileDirectory: browserProfileDirectory,
     });
@@ -210,6 +232,7 @@ export class AgentService {
   createReminder(details) {
     return this.reminders.create(details);
   }
+
 
   specialistComputerTool(
     _run,
@@ -480,16 +503,85 @@ and say done; never request their value. Verify the final state visibly.`,
     ];
   }
 
+  async createMcpTools(run) {
+    const configuredServers = await this.mcpServersProvider();
+    const enabledServers = configuredServers.filter((server) => server.enabled);
+    if (!enabledServers.length) {
+      return { close: async () => undefined, tools: [] };
+    }
+    activity(run, "mcp", "Connecting MCP servers");
+    const servers = enabledServers.map((server) => {
+      if (server.transport === "streamable-http") {
+        return new MCPServerStreamableHttp({
+          authProvider: this.mcpOAuthProvider?.(server),
+          name: server.name,
+          requestInit: { headers: server.headers },
+          timeout: MCP_REQUEST_TIMEOUT_MS,
+          url: server.url,
+        });
+      }
+      if (server.transport === "sse") {
+        return new MCPServerSSE({
+          authProvider: this.mcpOAuthProvider?.(server),
+          name: server.name,
+          requestInit: { headers: server.headers },
+          timeout: MCP_REQUEST_TIMEOUT_MS,
+          url: server.url,
+        });
+      }
+      return new MCPServerStdio({
+        args: server.args,
+        command: server.command,
+        env: { ...process.env, ...server.env },
+        name: server.name,
+        timeout: MCP_REQUEST_TIMEOUT_MS,
+      });
+    });
+    const connected = await connectMcpServers(servers, {
+      connectInParallel: true,
+      connectTimeoutMs: 10_000,
+      dropFailed: true,
+      strict: false,
+    });
+    try {
+      const failed = [...connected.errors.values()];
+      if (failed.length) {
+        run.toolActivity.push({
+          at: Date.now(),
+          detail: "One or more MCP servers could not connect",
+          id: `mcp:${Date.now()}`,
+          input: "",
+          kind: "activity",
+          output: telemetryText(
+            failed.map((error) => error.message),
+            2000
+          ),
+          status: "failed",
+          tool: "mcp",
+        });
+      }
+      const tools = await getAllMcpTools({
+        includeServerInToolNames: true,
+        mcpServers: connected.active,
+      });
+      return { close: () => connected.close(), tools };
+    } catch (error) {
+      await connected.close();
+      throw error;
+    }
+  }
+
   async execute(run, askUser, onTextDelta = noop) {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is not configured.");
     }
+    const mcp = await this.createMcpTools(run);
     const agent = new Agent({
       instructions: buildBoloInstructions(this.workspaceDirectory, new Date()),
       model: planningModel,
       modelSettings: { reasoning: { effort: "low" } },
       name: "Bolo",
-      tools: this.createTools(run, askUser),
+      tools: [...this.createTools(run, askUser), ...mcp.tools],
     });
     try {
       const result = await this.runner.run(agent, run.input, {
@@ -526,6 +618,8 @@ and say done; never request their value. Verify the final state visibly.`,
     } catch (error) {
       failOpenToolCalls(run, error);
       throw error;
+    } finally {
+      await mcp.close();
     }
   }
 

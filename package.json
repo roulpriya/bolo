@@ -21,6 +21,7 @@
     "test:browser-agent:real": "npm run build && node scripts/test-browser-agent-real-url.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@openai/agents": "^0.15.0",
     "dotenv": "^17.4.2",
     "lucide-react": "^1.31.0",

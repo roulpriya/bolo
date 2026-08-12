@@ -12,6 +12,8 @@ import {
 import { reminderIntent } from "../intents/reminder-intent.ts";
 import { permissionStatus } from "../platform/mac.ts";
 import { RunHistory } from "../state/run-history.ts";
+import { McpOAuthService } from "./mcp-oauth.ts";
+import { McpSettingsService } from "./mcp-settings.ts";
 import { normalizeLanguageCode, synthesize, translateText } from "./sarvam.ts";
 import { VoiceService } from "./voice-service.ts";
 
@@ -74,6 +76,14 @@ export class DesktopService extends EventEmitter {
     super();
     this.dataDirectory = dataDirectory;
     this.workspaceDirectory = workspaceDirectory;
+    this.mcpSettings = new McpSettingsService(dataDirectory);
+    this.mcpOAuth = new McpOAuthService({
+      dataDirectory,
+      openExternal: async (url) => {
+        const { shell } = await import("electron");
+        await shell.openExternal(url);
+      },
+    });
     this.runs = new Map();
     this.sarvam = sarvam;
     this.history =
@@ -88,6 +98,8 @@ export class DesktopService extends EventEmitter {
       agentService ||
       new AgentService({
         browserProfileDirectory: path.join(dataDirectory, "browser-profile"),
+        mcpOAuthProvider: (server) => this.mcpOAuth.provider(server),
+        mcpServersProvider: () => this.mcpSettings.list(),
         workspaceDirectory,
       });
     this.voice =
@@ -101,6 +113,8 @@ export class DesktopService extends EventEmitter {
 
   async initialize() {
     await this.history.load();
+    await this.mcpSettings.ensureDeepWiki();
+    await this.mcpOAuth.initialize();
   }
 
   async health() {
@@ -114,6 +128,29 @@ export class DesktopService extends EventEmitter {
       openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
       sarvamConfigured: Boolean(process.env.SARVAM_API_KEY),
     };
+  }
+
+  getMcpServers() {
+    return this.mcpSettings.list();
+  }
+
+  saveMcpServers(servers) {
+    return this.mcpSettings.save(servers);
+  }
+
+  async startMcpOAuth(id) {
+    const server = (await this.mcpSettings.list()).find(
+      (item) => item.id === id
+    );
+    if (!server || server.transport === "stdio") {
+      throw new Error("Choose a remote MCP server before connecting OAuth.");
+    }
+    await this.mcpOAuth.start(server);
+    return { ok: true };
+  }
+
+  completeMcpOAuth(callbackUrl) {
+    return this.mcpOAuth.complete(callbackUrl);
   }
 
   startVoice(options = {}) {
@@ -211,7 +248,7 @@ export class DesktopService extends EventEmitter {
       input: text,
       languageCode: normalizeLanguageCode(languageCode),
       pendingQuestion: null,
-      progress: "Starting agent",
+      progress: "Working",
       result: null,
       state: "running",
       toolActivity: [],
@@ -221,8 +258,8 @@ export class DesktopService extends EventEmitter {
 
     const reminder = reminderIntent(text);
     const work = reminder
-      ? this.runReminder(run, reminder)
-      : this.agent.execute(
+        ? this.runReminder(run, reminder)
+        : this.agent.execute(
           run,
           (prompt, kind) => this.askUser(run, prompt, kind),
           (delta) =>

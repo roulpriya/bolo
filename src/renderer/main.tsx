@@ -12,6 +12,7 @@ import audioWorkletUrl from "./audio-worklet.ts?url";
 import { Composer } from "./components/composer";
 import { Conversation } from "./components/conversation";
 import { RecordingBar } from "./components/recording-bar";
+import { SettingsPage } from "./components/settings-page";
 import type { AppState, Message, Recording, Run } from "./types";
 
 interface AgentTextEvent {
@@ -90,7 +91,6 @@ function App() {
   const recordingStartedAt = useRef(0);
   const handledQuestionId = useRef<string>("");
   const messageId = useRef(0);
-  const streamedMessageId = useRef<number | null>(null);
   const speechAudio = useRef<HTMLAudioElement | null>(null);
   const speechUrl = useRef<string>("");
   const speechGeneration = useRef(0);
@@ -109,33 +109,15 @@ function App() {
       { id: messageId.current, kind, progress, text },
     ]);
   };
-  const replaceStreamedMessage = (text: string) =>
-    setMessages((items) =>
-      streamedMessageId.current === null
-        ? items
-        : items.map((message) =>
-            message.id === streamedMessageId.current
-              ? { ...message, text }
-              : message
-          )
-    );
   const handleAgentText = (event: AgentTextEvent) => {
     if (!event.delta || event.runId !== runId.current) {
       return;
     }
-    setMessages((items) => {
-      if (streamedMessageId.current !== null) {
-        return items.map((message) =>
-          message.id === streamedMessageId.current
-            ? { ...message, text: `${message.text}${event.delta}` }
-            : message
-        );
-      }
-      messageId.current += 1;
-      const id = messageId.current;
-      streamedMessageId.current = id;
-      return [...items, { id, kind: "bot", text: event.delta }];
-    });
+    setRun((value) =>
+      value
+        ? { ...value, response: `${value.response ?? ""}${event.delta}` }
+        : value
+    );
   };
   const clearPoll = () => {
     if (isPresent(pollTimer.current)) {
@@ -255,12 +237,12 @@ function App() {
   const completeRun = async (nextRun: Run) => {
     const result = nextRun.result || "The task is complete.";
     setState("completed");
-    finishProgress(workedFor(nextRun));
-    if (streamedMessageId.current === null) {
-      addMessage("bot", result);
-    } else {
-      replaceStreamedMessage(result);
-    }
+    setRun({
+      ...nextRun,
+      finished: true,
+      progress: workedFor(nextRun),
+      response: result,
+    });
     await speak(result, nextRun.languageCode || "en-IN");
   };
   const handlePendingQuestion = async (nextRun: Run) => {
@@ -415,7 +397,6 @@ function App() {
     }
     setState("running");
     setRun({ progress: "Working", toolActivity: [] });
-    addMessage("bot", "", true);
     schedulePoll(0);
   };
   const handleFailedVoice = (event: VoiceEvent) => {
@@ -484,7 +465,6 @@ function App() {
       runId.current = started.id;
       setState("running");
       setRun({ progress: "Working", toolActivity: [] });
-      addMessage("bot", "", true);
       schedulePoll(0);
     } catch (error: unknown) {
       fail(error instanceof Error ? error.message : String(error));
@@ -513,7 +493,6 @@ function App() {
     runId.current = "";
     runInputMode.current = "typed";
     handledQuestionId.current = "";
-    streamedMessageId.current = null;
     setRun(null);
     setMessages([]);
     setInput("");
@@ -594,6 +573,7 @@ function App() {
       ).catch((error: unknown) => {
         fail(error instanceof Error ? error.message : String(error));
       }),
+    onSettings: () => window.boloDesktop.openSettings().catch(() => undefined),
     onStop: stopEverything,
     onSubmit: handleComposerSubmit,
     showStop: Boolean(run && !run.finished),
@@ -621,4 +601,10 @@ const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Bolo renderer root element was not found.");
 }
-createRoot(rootElement).render(<App />);
+createRoot(rootElement).render(
+  new URLSearchParams(window.location.search).has("settings") ? (
+    <SettingsPage />
+  ) : (
+    <App />
+  )
+);

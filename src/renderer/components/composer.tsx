@@ -1,4 +1,4 @@
-import { Mic, Send, Square } from "lucide-react";
+import { Mic, Send, Settings, Square } from "lucide-react";
 import type {
   ChangeEventHandler,
   FormEventHandler,
@@ -14,6 +14,7 @@ export function Composer({
   onChange,
   onKeyDown,
   onRecord,
+  onSettings,
   onStop,
   onSubmit,
   showStop,
@@ -25,6 +26,7 @@ export function Composer({
   onChange: ChangeEventHandler<HTMLTextAreaElement>;
   onKeyDown: KeyboardEventHandler<HTMLTextAreaElement>;
   onRecord: () => void;
+  onSettings: () => void;
   onStop: () => void;
   onSubmit: FormEventHandler<HTMLFormElement>;
   showStop: boolean;
@@ -47,6 +49,15 @@ export function Composer({
         rows={1}
         value={input}
       />
+      <button
+        aria-label="Open settings"
+        className="icon-button"
+        onClick={onSettings}
+        title="Settings"
+        type="button"
+      >
+        <Settings aria-hidden="true" />
+      </button>
       <button
         aria-label="Start a voice request"
         className="icon-button"

@@ -39,6 +39,7 @@ export interface Run {
   languageCode?: string;
   pendingQuestion?: PendingQuestion | null;
   progress?: string;
+  response?: string;
   result?: string;
   state?: string;
   toolActivity?: ToolActivity[];

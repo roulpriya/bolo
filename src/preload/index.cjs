@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("boloDesktop", {
     ipcRenderer.invoke("bolo:answer-run", runId, questionId, text),
   cancelVoice: (sessionId) =>
     ipcRenderer.invoke("bolo:cancel-voice", sessionId),
+  getMcpServers: () => ipcRenderer.invoke("bolo:mcp-servers-get"),
   getRun: (id) => ipcRenderer.invoke("bolo:get-run", id),
   health: () => ipcRenderer.invoke("bolo:health"),
   hideWindow() {
@@ -31,6 +32,9 @@ contextBridge.exposeInMainWorld("boloDesktop", {
     ipcRenderer.on("bolo:voice-event", listener);
     return () => ipcRenderer.removeListener("bolo:voice-event", listener);
   },
+  openSettings: () => ipcRenderer.invoke("bolo:settings-open"),
+  saveMcpServers: (servers) =>
+    ipcRenderer.invoke("bolo:mcp-servers-save", servers),
   sendVoiceChunk: (sessionId, bytes) =>
     ipcRenderer.send("bolo:voice-chunk", sessionId, bytes),
   setExpanded(expanded) {
@@ -42,6 +46,7 @@ contextBridge.exposeInMainWorld("boloDesktop", {
   speech: (text, languageCode) =>
     ipcRenderer.invoke("bolo:speech", text, languageCode),
   startAgent: (text) => ipcRenderer.invoke("bolo:start-agent", text),
+  startMcpOAuth: (id) => ipcRenderer.invoke("bolo:mcp-oauth-start", id),
   startVoice: (options) => ipcRenderer.invoke("bolo:start-voice", options),
   stopRun: (id) => ipcRenderer.invoke("bolo:stop-run", id),
 });

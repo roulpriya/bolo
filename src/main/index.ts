@@ -17,6 +17,7 @@ import { IPC, ipcArgs } from "../shared/ipc.ts";
 import { DesktopService } from "./services/desktop-service.ts";
 
 let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
 let desktopService: DesktopService | null = null;
 let tray: Tray | null = null;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -30,6 +31,13 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on("second-instance", () => {
   showWindow();
+});
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  service()
+    .completeMcpOAuth(url)
+    .catch(() => undefined);
 });
 
 function createWindow() {
@@ -92,6 +100,39 @@ function createWindow() {
   });
 }
 
+function showSettings() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+  settingsWindow = new BrowserWindow({
+    backgroundColor: "#151519",
+    height: 680,
+    minHeight: 540,
+    minWidth: 620,
+    title: "Bolo Settings",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: fileURLToPath(new URL("../preload/index.cjs", import.meta.url)),
+      sandbox: true,
+    },
+    width: 760,
+  });
+  if (devServerUrl) {
+    settingsWindow.loadURL(`${devServerUrl}?settings=1`);
+  } else {
+    settingsWindow.loadFile(
+      fileURLToPath(new URL("../../dist/renderer/index.html", import.meta.url)),
+      { query: { settings: "1" } }
+    );
+  }
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+}
+
 function showWindow(reset = false) {
   if (!mainWindow) {
     createWindow();
@@ -114,6 +155,7 @@ function createTray() {
     Menu.buildFromTemplate([
       { click: () => showWindow(), label: "Show Bolo" },
       { click: () => showWindow(true), label: "New Task" },
+      { click: () => showSettings(), label: "Settings" },
       { type: "separator" },
       { click: () => app.quit(), label: "Quit Bolo" },
     ])
@@ -134,6 +176,7 @@ function toggleWindow() {
 }
 
 app.whenReady().then(async () => {
+  app.setAsDefaultProtocolClient("bolo");
   desktopService = new DesktopService({
     dataDirectory: app.getPath("userData"),
     workspaceDirectory: app.getPath("home"),
@@ -215,6 +258,18 @@ function isMainRenderer(event: IpcMainEvent | IpcMainInvokeEvent) {
   );
 }
 
+function isSettingsRenderer(event: IpcMainEvent | IpcMainInvokeEvent) {
+  return Boolean(
+    settingsWindow &&
+      !settingsWindow.isDestroyed() &&
+      event.sender === settingsWindow.webContents
+  );
+}
+
+function isMainOrSettingsRenderer(event: IpcMainEvent | IpcMainInvokeEvent) {
+  return isMainRenderer(event) || isSettingsRenderer(event);
+}
+
 function service(): DesktopService {
   if (!desktopService) {
     throw new Error("Bolo is still starting.");
@@ -225,10 +280,11 @@ function service(): DesktopService {
 function handle<Arguments extends readonly unknown[]>(
   channel: string,
   argsSchema: z.ZodType<Arguments>,
-  operation: (...args: Arguments) => unknown
+  operation: (...args: Arguments) => unknown,
+  authorize = isMainRenderer
 ) {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    if (!isMainRenderer(event)) {
+    if (!authorize(event)) {
       throw new Error("Unauthorized renderer request.");
     }
     return operation(...argsSchema.parse(args));
@@ -236,6 +292,28 @@ function handle<Arguments extends readonly unknown[]>(
 }
 
 handle(IPC.health, z.tuple([]), () => service().health());
+handle(IPC.settingsOpen, ipcArgs.settingsOpen, () => {
+  showSettings();
+  return { ok: true };
+});
+handle(
+  IPC.mcpServersGet,
+  ipcArgs.mcpServersGet,
+  () => service().getMcpServers(),
+  isMainOrSettingsRenderer
+);
+handle(
+  IPC.mcpServersSave,
+  ipcArgs.mcpServersSave,
+  (servers) => service().saveMcpServers(servers),
+  isMainOrSettingsRenderer
+);
+handle(
+  IPC.mcpOAuthStart,
+  ipcArgs.mcpOAuthStart,
+  (id) => service().startMcpOAuth(id),
+  isMainOrSettingsRenderer
+);
 handle(IPC.startVoice, ipcArgs.startVoice, (options) =>
   service().startVoice(options)
 );
