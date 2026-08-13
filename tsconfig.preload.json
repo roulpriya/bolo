@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "noEmit": true,
     "composite": true,
-    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo/app.tsbuildinfo",
+    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo/preload.tsbuildinfo",
     "allowImportingTsExtensions": true,
     "strict": false,
     "esModuleInterop": true,
@@ -13,6 +13,10 @@
     "forceConsistentCasingInFileNames": true,
     "strictNullChecks": true
   },
-  "include": ["src/main/**/*.ts", "src/shared/**/*.ts"],
+  "include": [
+    "src/preload/**/*.cts",
+    "src/shared/**/*.ts",
+    "src/renderer/bolo-desktop.d.ts"
+  ],
   "exclude": ["dist", "node_modules"]
 }

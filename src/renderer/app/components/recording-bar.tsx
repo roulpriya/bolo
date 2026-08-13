@@ -1,3 +1,4 @@
+import { Button } from "../../ui/button";
 import type { Recording } from "../types";
 
 export function RecordingBar({
@@ -18,9 +19,13 @@ export function RecordingBar({
         {Math.floor(recording.seconds / 60)}:
         {String(recording.seconds % 60).padStart(2, "0")}
       </span>
-      <button className="quiet-button" onClick={onCancel} type="button">
+      <Button
+        className="recording-bar-cancel"
+        onPress={onCancel}
+        variant="quiet"
+      >
         Cancel
-      </button>
+      </Button>
     </section>
   );
 }

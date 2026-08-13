@@ -1,14 +1,22 @@
 import { existsSync } from "node:fs";
 import { chromium } from "playwright";
 
+// This module deliberately duck-types Playwright's Page/BrowserContext
+// instead of importing their real types, so tests can inject minimal fakes
+// (see local-browser.test.ts) without implementing Playwright's full surface.
+// `unknown` would just force a cast back at every `.mouse`/`.keyboard`/etc.
+// access below, so this alias documents the escape hatch in one place.
+// biome-ignore lint/suspicious/noExplicitAny: see comment above
+type DuckTyped = any;
+
 const VIEWPORT = { height: 800, width: 1280 };
 const MAX_ACTIONS = 35;
 const CLOSED_TARGET_PATTERN =
   /(?:target (?:page, context or browser )?has been closed|page has been closed|browser has been closed)/i;
 const noop = () => undefined;
 
-function normalizeKey(keys) {
-  const replacements = {
+function normalizeKey(keys: string[]) {
+  const replacements: Record<string, string> = {
     ALT: "Alt",
     BACKSPACE: "Backspace",
     CMD: "Meta",
@@ -28,11 +36,31 @@ function normalizeKey(keys) {
     .join("+");
 }
 
-export class BrowserPageComputer {
-  environment = "browser";
-  dimensions = [VIEWPORT.width, VIEWPORT.height];
+interface BrowserManager {
+  newPage: () => DuckTyped;
+}
 
-  constructor(page, { manager, signal, onActivity = noop } = {}) {
+export class BrowserPageComputer {
+  environment = "browser" as const;
+  dimensions: [number, number] = [VIEWPORT.width, VIEWPORT.height];
+  page: DuckTyped;
+  manager: BrowserManager | undefined;
+  signal: AbortSignal | undefined;
+  onActivity: (message: string) => void;
+  actionCount: number;
+
+  constructor(
+    page: DuckTyped,
+    {
+      manager,
+      signal,
+      onActivity = noop,
+    }: {
+      manager?: BrowserManager;
+      signal?: AbortSignal;
+      onActivity?: (message: string) => void;
+    } = {}
+  ) {
     this.page = page;
     this.manager = manager;
     this.signal = signal;
@@ -40,7 +68,7 @@ export class BrowserPageComputer {
     this.actionCount = 0;
   }
 
-  check(label) {
+  check(label: string) {
     if (this.signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
@@ -62,7 +90,11 @@ export class BrowserPageComputer {
     return this.page;
   }
 
-  async perform(label, action, { retryOnClose = false } = {}) {
+  async perform<T>(
+    label: string,
+    action: (page: DuckTyped) => T | Promise<T>,
+    { retryOnClose = false }: { retryOnClose?: boolean } = {}
+  ): Promise<T> {
     this.check(label);
     const page = await this.usablePage();
     try {
@@ -90,7 +122,7 @@ export class BrowserPageComputer {
     return bytes.toString("base64");
   }
 
-  async navigate(url) {
+  async navigate(url: string) {
     const target = new URL(String(url));
     if (
       !["http:", "https:"].includes(target.protocol) ||
@@ -126,26 +158,26 @@ export class BrowserPageComputer {
     });
   }
 
-  async click(x, y, button = "left") {
+  async click(x: number, y: number, button = "left") {
     await this.perform("Clicking in browser", (page) =>
       page.mouse.click(x, y, { button })
     );
   }
 
-  async doubleClick(x, y) {
+  async doubleClick(x: number, y: number) {
     await this.perform("Double-clicking in browser", (page) =>
       page.mouse.dblclick(x, y)
     );
   }
 
-  async scroll(x, y, scrollX, scrollY) {
+  async scroll(x: number, y: number, scrollX: number, scrollY: number) {
     await this.perform("Scrolling browser", async (page) => {
       await page.mouse.move(x, y);
       await page.mouse.wheel(scrollX, scrollY);
     });
   }
 
-  async type(text) {
+  async type(text: string) {
     await this.perform("Typing in browser", (page) =>
       page.keyboard.insertText(text)
     );
@@ -157,17 +189,17 @@ export class BrowserPageComputer {
     );
   }
 
-  async move(x, y) {
+  async move(x: number, y: number) {
     await this.perform("Moving in browser", (page) => page.mouse.move(x, y));
   }
 
-  async keypress(keys) {
+  async keypress(keys: string[]) {
     await this.perform("Using browser keyboard", (page) =>
       page.keyboard.press(normalizeKey(keys))
     );
   }
 
-  async drag(path) {
+  async drag(path: [number, number][]) {
     if (!path.length) {
       return;
     }
@@ -183,8 +215,27 @@ export class BrowserPageComputer {
   }
 }
 
+interface ChromiumLike {
+  executablePath: () => string;
+  launchPersistentContext: (
+    directory: string,
+    options: DuckTyped
+  ) => Promise<DuckTyped>;
+}
+
 export class LocalBrowserManager {
-  constructor({ profileDirectory, chromiumImpl = chromium }) {
+  profileDirectory: string;
+  chromium: ChromiumLike;
+  context: DuckTyped;
+  opening: Promise<DuckTyped> | null;
+
+  constructor({
+    profileDirectory,
+    chromiumImpl = chromium,
+  }: {
+    profileDirectory: string;
+    chromiumImpl?: ChromiumLike;
+  }) {
     this.profileDirectory = profileDirectory;
     this.chromium = chromiumImpl;
     this.context = null;

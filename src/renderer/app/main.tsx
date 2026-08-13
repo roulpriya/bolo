@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   useEffect,
@@ -8,12 +7,14 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { installBrowserShimIfNeeded } from "../browser-shim";
 import audioWorkletUrl from "./audio-worklet.ts?url";
 import { Composer } from "./components/composer";
 import { Conversation } from "./components/conversation";
 import { RecordingBar } from "./components/recording-bar";
-import { SettingsPage } from "./components/settings-page";
 import type { AppState, Message, Recording, Run } from "./types";
+
+installBrowserShimIfNeeded();
 
 interface AgentTextEvent {
   delta: string;
@@ -504,9 +505,11 @@ function App() {
     target.style.height = "auto";
     target.style.height = `${Math.min(target.scrollHeight, 92)}px`;
   };
-  const handleComposerChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(event.target.value);
-    adjustHeight(event.target);
+  const handleComposerChange = (value: string) => {
+    setInput(value);
+    if (isPresent(inputRef.current)) {
+      adjustHeight(inputRef.current);
+    }
   };
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -601,10 +604,4 @@ const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Bolo renderer root element was not found.");
 }
-createRoot(rootElement).render(
-  new URLSearchParams(window.location.search).has("settings") ? (
-    <SettingsPage />
-  ) : (
-    <App />
-  )
-);
+createRoot(rootElement).render(<App />);

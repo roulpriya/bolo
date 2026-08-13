@@ -3,16 +3,19 @@ import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { VoiceStartOptions } from "../../shared/ipc.ts";
 import {
   AgentService,
   failOpenToolCalls,
   recordToolEnd,
   recordToolStart,
 } from "../agent/agent-service.ts";
+import type { PendingQuestion, Run } from "../agent/run.ts";
 import { reminderIntent } from "../intents/reminder-intent.ts";
 import { permissionStatus } from "../platform/mac.ts";
 import { RunHistory } from "../state/run-history.ts";
 import { McpOAuthService } from "./mcp-oauth.ts";
+import type { McpServerInput } from "./mcp-settings.ts";
 import { McpSettingsService } from "./mcp-settings.ts";
 import { normalizeLanguageCode, synthesize, translateText } from "./sarvam.ts";
 import { VoiceService } from "./voice-service.ts";
@@ -20,9 +23,13 @@ import { VoiceService } from "./voice-service.ts";
 const MAX_INPUT_LENGTH = 4000;
 const MAX_ANSWER_LENGTH = 2000;
 const MAX_AUDIO_CHUNK_BYTES = 128 * 1024;
-const TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
+const TERMINAL_STATES: ReadonlySet<Run["state"]> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
-function cleanText(value, maxLength, emptyMessage) {
+function cleanText(value: unknown, maxLength: number, emptyMessage: string) {
   const text = String(value || "").trim();
   if (!text) {
     throw new Error(emptyMessage);
@@ -33,14 +40,23 @@ function cleanText(value, maxLength, emptyMessage) {
   return text;
 }
 
-function safeError(error) {
-  const message = String(error?.message || error || "Something went wrong.");
+function safeError(error: unknown) {
+  const message = String(
+    (error instanceof Error ? error.message : error) || "Something went wrong."
+  );
   return message
     .replace(/(?:sk|key|token|secret)[-_][A-Za-z0-9_-]{12,}/gi, "[redacted]")
     .slice(0, 1000);
 }
 
-function publicRun(run) {
+// A plain function call, not an inline comparison: `run.state` can change
+// concurrently (e.g. via stopRun) while an `await` above is pending, so this
+// must be re-read rather than trusted from an earlier narrowing.
+function isCancelled(run: Run) {
+  return run.state === "cancelled";
+}
+
+function publicRun(run: Run) {
   return {
     createdAt: run.createdAt,
     currentTool: run.currentTool || null,
@@ -63,8 +79,55 @@ function publicRun(run) {
   };
 }
 
+type PublicRun = ReturnType<typeof publicRun>;
+
+type MaybePromise<T> = Promise<T> | T;
+
+export interface AgentLike {
+  browserAvailable: () => boolean;
+  close: () => Promise<void>;
+  createReminder: (details: {
+    title: string;
+    scheduledFor: string;
+    signal?: AbortSignal;
+  }) => MaybePromise<{ title: string }>;
+  execute: (
+    run: Run,
+    askUser: (prompt: string, kind: string) => Promise<string>,
+    onTextDelta?: (delta: string) => void
+  ) => Promise<unknown>;
+}
+
+export interface VoiceLike {
+  cancel: (sessionId: string) => void;
+  close: () => void;
+  sendChunk: (sessionId: string, bytes: Buffer) => void;
+  start: (options: VoiceStartOptions) => { sessionId: string };
+}
+
+export interface SarvamLike {
+  synthesize: (
+    text: string,
+    options?: Record<string, unknown>
+  ) => MaybePromise<Buffer>;
+  translateText: (
+    text: string,
+    options?: Record<string, unknown>
+  ) => MaybePromise<{ sourceLanguageCode?: string; text: string }>;
+}
+
 /** Main-process boundary for all renderer requests and long-running resources. */
 export class DesktopService extends EventEmitter {
+  dataDirectory: string;
+  workspaceDirectory: string;
+  mcpSettings: McpSettingsService;
+  mcpOAuth: McpOAuthService;
+  runs: Map<string, Run>;
+  sarvam: SarvamLike;
+  history: RunHistory<PublicRun>;
+  agent: AgentLike;
+  voice: VoiceLike;
+
   constructor({
     dataDirectory = path.resolve(".bolo"),
     workspaceDirectory = homedir(),
@@ -72,6 +135,13 @@ export class DesktopService extends EventEmitter {
     voiceService,
     history,
     sarvam = { synthesize, translateText },
+  }: {
+    dataDirectory?: string;
+    workspaceDirectory?: string;
+    agentService?: AgentLike;
+    voiceService?: VoiceLike;
+    history?: RunHistory<PublicRun>;
+    sarvam?: SarvamLike;
   } = {}) {
     super();
     this.dataDirectory = dataDirectory;
@@ -88,7 +158,7 @@ export class DesktopService extends EventEmitter {
     this.sarvam = sarvam;
     this.history =
       history ||
-      new RunHistory({
+      new RunHistory<PublicRun>({
         file:
           process.env.NODE_ENV === "test"
             ? null
@@ -98,6 +168,8 @@ export class DesktopService extends EventEmitter {
       agentService ||
       new AgentService({
         browserProfileDirectory: path.join(dataDirectory, "browser-profile"),
+        mcpConnectionIssueProvider: (server) =>
+          this.mcpOAuth.connectionIssue(server),
         mcpOAuthProvider: (server) => this.mcpOAuth.provider(server),
         mcpServersProvider: () => this.mcpSettings.list(),
         workspaceDirectory,
@@ -134,28 +206,41 @@ export class DesktopService extends EventEmitter {
     return this.mcpSettings.list();
   }
 
-  saveMcpServers(servers) {
+  saveMcpServers(servers: McpServerInput[]) {
     return this.mcpSettings.save(servers);
   }
 
-  async startMcpOAuth(id) {
+  async startMcpOAuth(id: string) {
     const server = (await this.mcpSettings.list()).find(
       (item) => item.id === id
     );
     if (!server || server.transport === "stdio") {
       throw new Error("Choose a remote MCP server before connecting OAuth.");
     }
-    await this.mcpOAuth.start(server);
-    return { ok: true };
+    try {
+      const result = await this.mcpOAuth.start(server);
+      return { status: result === "AUTHORIZED" ? "connected" : "pending" };
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("does not support dynamic client registration")
+      ) {
+        throw new Error(
+          "This MCP server requires a pre-registered OAuth client. Add its OAuth client ID and secret, save the settings, and try again.",
+          { cause: error }
+        );
+      }
+      throw error;
+    }
   }
 
-  completeMcpOAuth(callbackUrl) {
+  completeMcpOAuth(callbackUrl: string) {
     return this.mcpOAuth.complete(callbackUrl);
   }
 
-  startVoice(options = {}) {
-    const purpose = options?.purpose;
-    if (!["command", "answer"].includes(purpose)) {
+  startVoice(options: Partial<VoiceStartOptions> = {}) {
+    const { purpose } = options;
+    if (purpose !== "command" && purpose !== "answer") {
       throw new Error("Voice purpose must be command or answer.");
     }
     if (purpose === "answer") {
@@ -171,25 +256,34 @@ export class DesktopService extends EventEmitter {
     }
     return this.voice.start({
       purpose,
-      questionId: purpose === "answer" ? String(options.questionId) : null,
-      runId: purpose === "answer" ? String(options.runId) : null,
+      questionId: purpose === "answer" ? String(options.questionId) : undefined,
+      runId: purpose === "answer" ? String(options.runId) : undefined,
     });
   }
 
-  sendVoiceChunk(sessionId, audio) {
-    const bytes = Buffer.from(audio || []);
+  sendVoiceChunk(sessionId: string, audio: ArrayBuffer) {
+    const bytes = Buffer.from(audio ?? new ArrayBuffer(0));
     if (!bytes.length || bytes.length > MAX_AUDIO_CHUNK_BYTES) {
       throw new Error("Invalid microphone audio chunk.");
     }
     this.voice.sendChunk(String(sessionId || ""), bytes);
   }
 
-  cancelVoice(sessionId) {
+  cancelVoice(sessionId: string) {
     this.voice.cancel(String(sessionId || ""));
     return { ok: true };
   }
 
-  async commitVoiceTranslation(session, transcript, detectedLanguageCode) {
+  async commitVoiceTranslation(
+    session: {
+      purpose?: string;
+      id: string;
+      runId?: string;
+      questionId?: string;
+    },
+    transcript: string,
+    detectedLanguageCode: string
+  ) {
     try {
       const languageCode = normalizeLanguageCode(detectedLanguageCode);
       if (session.purpose === "command") {
@@ -202,9 +296,12 @@ export class DesktopService extends EventEmitter {
           type: "translated",
         });
       } else {
-        await this.answerRun(session.runId, session.questionId, transcript, {
-          alreadyTranslated: true,
-        });
+        await this.answerRun(
+          String(session.runId),
+          String(session.questionId),
+          transcript,
+          { alreadyTranslated: true }
+        );
         this.emit("voice-event", {
           languageCode,
           questionId: session.questionId,
@@ -229,7 +326,10 @@ export class DesktopService extends EventEmitter {
     );
   }
 
-  startAgent(input, { languageCode = "en-IN" } = {}) {
+  startAgent(
+    input: string,
+    { languageCode = "en-IN" }: { languageCode?: string } = {}
+  ) {
     if (this.activeRun()) {
       throw new Error("A task is already running.");
     }
@@ -238,7 +338,7 @@ export class DesktopService extends EventEmitter {
       MAX_INPUT_LENGTH,
       "Please say or type a task."
     );
-    const run = {
+    const run: Run = {
       abortController: new AbortController(),
       createdAt: Date.now(),
       currentTool: null,
@@ -258,8 +358,8 @@ export class DesktopService extends EventEmitter {
 
     const reminder = reminderIntent(text);
     const work = reminder
-        ? this.runReminder(run, reminder)
-        : this.agent.execute(
+      ? this.runReminder(run, reminder)
+      : this.agent.execute(
           run,
           (prompt, kind) => this.askUser(run, prompt, kind),
           (delta) =>
@@ -270,14 +370,14 @@ export class DesktopService extends EventEmitter {
         );
     work
       .then(async (result) => {
-        if (run.state === "cancelled") {
+        if (isCancelled(run)) {
           return;
         }
         const response = String(result || "The task is complete.");
         run.progress =
           run.languageCode === "en-IN" ? "Complete" : "Translating response";
         run.result = await this.localize(response, run.languageCode);
-        if (run.state === "cancelled") {
+        if (isCancelled(run)) {
           return;
         }
         run.state = "completed";
@@ -287,7 +387,7 @@ export class DesktopService extends EventEmitter {
         this.record(run);
       })
       .catch((error) => {
-        if (run.state === "cancelled") {
+        if (isCancelled(run)) {
           return;
         }
         failOpenToolCalls(run, error);
@@ -306,7 +406,10 @@ export class DesktopService extends EventEmitter {
     return { id: run.id };
   }
 
-  async runReminder(run, reminder) {
+  async runReminder(
+    run: Run,
+    reminder: { scheduledFor: string; timeLabel: string; title: string | null }
+  ) {
     const title = await this.askUser(
       run,
       `What should I remind you about at ${reminder.timeLabel}?`,
@@ -332,7 +435,7 @@ export class DesktopService extends EventEmitter {
     return `Reminder set for ${reminder.timeLabel}: ${created.title}.`;
   }
 
-  async askUser(run, prompt, kind = "input") {
+  async askUser(run: Run, prompt: string, kind = "input") {
     if (run.abortController.signal.aborted) {
       return Promise.reject(new DOMException("Aborted", "AbortError"));
     }
@@ -357,7 +460,7 @@ export class DesktopService extends EventEmitter {
     if (run.abortController.signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const question = {
+    const question: PendingQuestion = {
       id: crypto.randomUUID(),
       kind: kind === "confirmation" ? "confirmation" : "input",
       prompt: localizedPrompt,
@@ -369,7 +472,7 @@ export class DesktopService extends EventEmitter {
     run.pendingQuestion = question;
     this.record(run);
 
-    return new Promise((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
       question.resolve = resolve;
       question.reject = reject;
       run.abortController.signal.addEventListener(
@@ -381,10 +484,10 @@ export class DesktopService extends EventEmitter {
   }
 
   async answerRun(
-    runId,
-    questionId,
-    answer,
-    { alreadyTranslated = false } = {}
+    runId: string,
+    questionId: string,
+    answer: string,
+    { alreadyTranslated = false }: { alreadyTranslated?: boolean } = {}
   ) {
     const run = this.runs.get(String(runId || ""));
     if (run?.state !== "waiting_for_user" || !run.pendingQuestion) {
@@ -418,11 +521,11 @@ export class DesktopService extends EventEmitter {
     run.state = "running";
     run.progress = "Continuing";
     this.record(run);
-    question.resolve(text);
+    question.resolve?.(text);
     return { ok: true };
   }
 
-  getRun(id) {
+  getRun(id: string) {
     const run = this.runs.get(String(id || ""));
     if (!run) {
       const historical = this.history.get(String(id || ""));
@@ -434,7 +537,7 @@ export class DesktopService extends EventEmitter {
     return publicRun(run);
   }
 
-  stopRun(id) {
+  stopRun(id: string) {
     const run = this.runs.get(String(id || ""));
     if (!run) {
       throw new Error("Run not found.");
@@ -452,7 +555,7 @@ export class DesktopService extends EventEmitter {
     return { ok: true };
   }
 
-  rejectQuestion(run, error) {
+  rejectQuestion(run: Run, error: unknown) {
     if (!run.pendingQuestion) {
       return;
     }
@@ -461,7 +564,7 @@ export class DesktopService extends EventEmitter {
     question.reject?.(error);
   }
 
-  async speech(text, languageCode = "en-IN") {
+  async speech(text: string, languageCode = "en-IN") {
     const value = cleanText(text, 600, "No response text supplied.");
     return new Uint8Array(
       await this.sarvam.synthesize(value, {
@@ -470,7 +573,7 @@ export class DesktopService extends EventEmitter {
     );
   }
 
-  async localize(text, languageCode) {
+  async localize(text: string, languageCode: string) {
     const target = normalizeLanguageCode(languageCode);
     if (target === "en-IN") {
       return text;
@@ -482,7 +585,7 @@ export class DesktopService extends EventEmitter {
     return translated.text;
   }
 
-  record(run) {
+  record(run: Run) {
     this.history.set(publicRun(run));
   }
 

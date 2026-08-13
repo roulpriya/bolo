@@ -83,7 +83,7 @@ test("browser computer navigates safe URLs and extracts page evidence", async ()
 
 test("browser manager relaunches a closed persistent context", async () => {
   let launches = 0;
-  const contexts: unknown[] = [];
+  const contexts: Array<{ close: () => Promise<void> }> = [];
   const chromiumImpl = {
     executablePath: () => process.execPath,
     launchPersistentContext() {

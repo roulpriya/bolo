@@ -8,10 +8,14 @@ import {
 
 class FakeSocket extends EventEmitter {
   static OPEN = 1;
-  readyState = 0;
-  sent = [];
+  static instance: FakeSocket;
 
-  constructor(url, options) {
+  readyState = 0;
+  sent: any[] = [];
+  url: string;
+  options: unknown;
+
+  constructor(url: string, options: unknown) {
     super();
     FakeSocket.instance = this;
     this.url = url;
@@ -23,7 +27,7 @@ class FakeSocket extends EventEmitter {
     this.emit("open");
   }
 
-  send(value) {
+  send(value: string) {
     this.sent.push(JSON.parse(value));
   }
 
@@ -54,8 +58,9 @@ test("accumulates speech across a brief pause and commits exactly once", async (
   const voice = new VoiceService({
     maxTurnMs: 10_000,
     onEvent: (event) => events.push(event.type),
-    onTranslation: (_session, transcript, languageCode) =>
-      translations.push({ languageCode, transcript }),
+    onTranslation: (_session, transcript, languageCode) => {
+      translations.push({ languageCode, transcript });
+    },
     startSpeechTimeoutMs: 10_000,
     turnCommitDelayMs: 20,
     WebSocketImpl: FakeSocket,

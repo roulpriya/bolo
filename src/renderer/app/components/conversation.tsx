@@ -52,9 +52,9 @@ export function Conversation({
       <div aria-live="polite" className="chat-log">
         {visibleMessages.map((message) => (
           <article className={`message ${message.kind}`} key={message.id}>
-            <span className="message-label">
-              {message.kind === "user" ? "You" : "Bolo"}
-            </span>
+            {message.kind === "user" ? (
+              <span className="message-label">You</span>
+            ) : null}
             <div className="message-body">
               <MessageContent message={message} run={run} />
             </div>
@@ -62,7 +62,6 @@ export function Conversation({
         ))}
         {run ? (
           <article className="message bot">
-            <span className="message-label">Bolo</span>
             <div className="message-body">
               <Progress run={run} />
             </div>

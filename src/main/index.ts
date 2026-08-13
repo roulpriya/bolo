@@ -19,7 +19,10 @@ import { DesktopService } from "./services/desktop-service.ts";
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let desktopService: DesktopService | null = null;
+let desktopServiceReady = false;
 let tray: Tray | null = null;
+const pendingMcpOAuthCallbacks: string[] = [];
+const handledMcpOAuthCallbacks = new Set<string>();
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const trayIconPath = fileURLToPath(
   new URL("./assets/boloTemplate.png", import.meta.url)
@@ -29,19 +32,65 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 }
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, commandLine) => {
+  const callbackUrl = commandLine.find((argument) =>
+    argument.startsWith("bolo://mcp-oauth")
+  );
+  if (callbackUrl) {
+    handleMcpOAuthCallback(callbackUrl);
+    return;
+  }
   showWindow();
 });
 
 app.on("open-url", (event, url) => {
   event.preventDefault();
-  service()
-    .completeMcpOAuth(url)
-    .catch(() => undefined);
+  handleMcpOAuthCallback(url);
 });
 
+function sendMcpOAuthEvent(event: {
+  error?: string;
+  serverId?: string;
+  status: "connected" | "failed";
+}): void {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send(IPC.mcpOAuthEvent, event);
+    settingsWindow.show();
+    settingsWindow.focus();
+  }
+}
+
+function handleMcpOAuthCallback(url: string): void {
+  if (!(desktopService && desktopServiceReady)) {
+    if (!pendingMcpOAuthCallbacks.includes(url)) {
+      pendingMcpOAuthCallbacks.push(url);
+    }
+    return;
+  }
+  if (handledMcpOAuthCallbacks.has(url)) {
+    return;
+  }
+  handledMcpOAuthCallbacks.add(url);
+  desktopService
+    .completeMcpOAuth(url)
+    .then((serverId) => {
+      if (serverId) {
+        sendMcpOAuthEvent({ serverId, status: "connected" });
+      }
+    })
+    .catch((error: unknown) => {
+      sendMcpOAuthEvent({
+        error: String(error instanceof Error ? error.message : error).slice(
+          0,
+          600
+        ),
+        status: "failed",
+      });
+    });
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     backgroundColor: "#00000000",
     frame: false,
     fullscreenable: false,
@@ -57,27 +106,34 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: fileURLToPath(new URL("../preload/index.cjs", import.meta.url)),
+      preload: fileURLToPath(
+        new URL("../../dist/preload/index.cjs", import.meta.url)
+      ),
       sandbox: true,
     },
     width: 760,
   });
+  mainWindow = window;
 
   if (devServerUrl) {
-    mainWindow.loadURL(devServerUrl);
+    window.loadURL(`${devServerUrl}/app/index.html`);
   } else {
-    mainWindow.loadFile(
-      fileURLToPath(new URL("../../dist/renderer/index.html", import.meta.url))
+    window.loadFile(
+      fileURLToPath(
+        new URL("../../dist/renderer/app/index.html", import.meta.url)
+      )
     );
   }
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-    mainWindow.focus();
+  window.once("ready-to-show", () => {
+    window.show();
+    window.focus();
   });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
   });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
       if (
@@ -92,8 +148,8 @@ function createWindow() {
     }
     return { action: "deny" };
   });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (url === mainWindow.webContents.getURL()) {
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url === window.webContents.getURL()) {
       return;
     }
     event.preventDefault();
@@ -112,20 +168,25 @@ function showSettings() {
     minHeight: 540,
     minWidth: 620,
     title: "Bolo Settings",
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: { x: 20, y: 20 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: fileURLToPath(new URL("../preload/index.cjs", import.meta.url)),
+      preload: fileURLToPath(
+        new URL("../../dist/preload/index.cjs", import.meta.url)
+      ),
       sandbox: true,
     },
     width: 760,
   });
   if (devServerUrl) {
-    settingsWindow.loadURL(`${devServerUrl}?settings=1`);
+    settingsWindow.loadURL(`${devServerUrl}/settings/index.html`);
   } else {
     settingsWindow.loadFile(
-      fileURLToPath(new URL("../../dist/renderer/index.html", import.meta.url)),
-      { query: { settings: "1" } }
+      fileURLToPath(
+        new URL("../../dist/renderer/settings/index.html", import.meta.url)
+      )
     );
   }
   settingsWindow.on("closed", () => {
@@ -137,10 +198,14 @@ function showWindow(reset = false) {
   if (!mainWindow) {
     createWindow();
   }
-  mainWindow.center();
-  mainWindow.show();
-  mainWindow.focus();
-  mainWindow.webContents.send(reset ? IPC.newCommand : IPC.focusCommand);
+  const window = mainWindow;
+  if (!window) {
+    return;
+  }
+  window.center();
+  window.show();
+  window.focus();
+  window.webContents.send(reset ? IPC.newCommand : IPC.focusCommand);
 }
 
 function createTray() {
@@ -182,6 +247,16 @@ app.whenReady().then(async () => {
     workspaceDirectory: app.getPath("home"),
   });
   await desktopService.initialize();
+  desktopServiceReady = true;
+  for (const callbackUrl of pendingMcpOAuthCallbacks.splice(0)) {
+    handleMcpOAuthCallback(callbackUrl);
+  }
+  const launchCallbackUrl = process.argv.find((argument) =>
+    argument.startsWith("bolo://mcp-oauth")
+  );
+  if (launchCallbackUrl) {
+    handleMcpOAuthCallback(launchCallbackUrl);
+  }
   desktopService.on("voice-event", (voiceEvent) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IPC.voiceEvent, voiceEvent);

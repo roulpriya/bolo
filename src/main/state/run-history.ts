@@ -1,24 +1,36 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export class RunHistory {
-  constructor({ file = null } = {}) {
+type HistoryRecord = {
+  id: string;
+  state?: unknown;
+  error?: unknown;
+  finishedAt?: unknown;
+} & Record<string, unknown>;
+
+export class RunHistory<T extends HistoryRecord = HistoryRecord> {
+  file: string | null;
+  items: Map<string, T>;
+  pendingWrite: Promise<void>;
+
+  constructor({ file = null }: { file?: string | null } = {}) {
     this.file = file;
     this.items = new Map();
     this.pendingWrite = Promise.resolve();
   }
 
   async load() {
-    if (!this.file) {
+    const { file } = this;
+    if (!file) {
       return;
     }
     try {
-      const stored = JSON.parse(await readFile(this.file, "utf8"));
-      for (const run of Array.isArray(stored) ? stored : []) {
+      const stored: unknown = JSON.parse(await readFile(file, "utf8"));
+      for (const run of Array.isArray(stored) ? (stored as T[]) : []) {
         if (!run.id) {
           continue;
         }
-        if (["running", "waiting_for_user"].includes(run.state)) {
+        if (["running", "waiting_for_user"].includes(String(run.state))) {
           run.state = "failed";
           run.error = "Bolo restarted before this task finished.";
           run.finishedAt = Date.now();
@@ -32,11 +44,11 @@ export class RunHistory {
     }
   }
 
-  get(id) {
+  get(id: string) {
     return this.items.get(id) || null;
   }
 
-  set(run) {
+  set(run: T) {
     this.items.set(run.id, structuredClone(run));
     if (this.file) {
       this.pendingWrite = this.pendingWrite
@@ -46,13 +58,17 @@ export class RunHistory {
   }
 
   async persist() {
-    await mkdir(path.dirname(this.file), { recursive: true });
-    const temporary = `${this.file}.tmp`;
+    const { file } = this;
+    if (!file) {
+      return;
+    }
+    await mkdir(path.dirname(file), { recursive: true });
+    const temporary = `${file}.tmp`;
     const recent = [...this.items.values()].slice(-100);
     await writeFile(temporary, JSON.stringify(recent, null, 2), {
       mode: 0o600,
     });
-    await rename(temporary, this.file);
+    await rename(temporary, file);
   }
 
   async close() {

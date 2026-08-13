@@ -8,12 +8,11 @@
     "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo/test.tsbuildinfo",
     "allowImportingTsExtensions": true,
     "strict": false,
-    "noCheck": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "strictNullChecks": true
   },
-  "include": ["test/**/*.ts"],
+  "include": ["test/**/*.ts", "src/main/**/*.ts", "src/shared/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }

@@ -1,10 +1,7 @@
 import { Mic, Send, Settings, Square } from "lucide-react";
-import type {
-  ChangeEventHandler,
-  FormEventHandler,
-  KeyboardEventHandler,
-  RefObject,
-} from "react";
+import type { FormEventHandler, KeyboardEventHandler, RefObject } from "react";
+import { Button } from "../../ui/button";
+import { TextArea } from "../../ui/text-area";
 
 export function Composer({
   canAnswer,
@@ -23,7 +20,7 @@ export function Composer({
   canInput: boolean;
   input: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
-  onChange: ChangeEventHandler<HTMLTextAreaElement>;
+  onChange: (value: string) => void;
   onKeyDown: KeyboardEventHandler<HTMLTextAreaElement>;
   onRecord: () => void;
   onSettings: () => void;
@@ -36,9 +33,9 @@ export function Composer({
       <span aria-hidden="true" className="composer-orb">
         <i />
       </span>
-      <textarea
+      <TextArea
         aria-label="Task or answer"
-        disabled={!canInput}
+        isDisabled={!canInput}
         maxLength={4000}
         onChange={onChange}
         onKeyDown={onKeyDown}
@@ -49,45 +46,43 @@ export function Composer({
         rows={1}
         value={input}
       />
-      <button
+      <Button
         aria-label="Open settings"
-        className="icon-button"
-        onClick={onSettings}
+        onPress={onSettings}
         title="Settings"
-        type="button"
+        variant="icon"
       >
         <Settings aria-hidden="true" />
-      </button>
-      <button
+      </Button>
+      <Button
         aria-label="Start a voice request"
-        className="icon-button"
-        disabled={!canInput}
-        onClick={onRecord}
+        isDisabled={!canInput}
+        onPress={onRecord}
         title="Start voice"
-        type="button"
+        variant="icon"
       >
         <Mic aria-hidden="true" />
-      </button>
+      </Button>
       {showStop ? (
-        <button
+        <Button
           aria-label="Stop task"
-          className="stop-button composer-stop-button"
-          onClick={onStop}
+          className="composer-stop-button"
+          onPress={onStop}
           title="Stop task"
-          type="button"
+          variant="stop"
         >
           <Square aria-hidden="true" />
           Stop
-        </button>
+        </Button>
       ) : null}
-      <button
+      <Button
         aria-label={canAnswer ? "Send answer" : "Run task"}
-        className="send-button"
         hidden={!(input.trim() && canInput)}
         type="submit"
+        variant="send"
       >
         <Send aria-hidden="true" />
-      </button>
+      </Button>
     </form>
   );
 }

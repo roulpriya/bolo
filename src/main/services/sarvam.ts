@@ -1,3 +1,10 @@
+interface FetchResponse {
+  json: () => Promise<unknown>;
+  ok: boolean;
+  text: () => Promise<string>;
+}
+type FetchImpl = (url: string, init: RequestInit) => Promise<FetchResponse>;
+
 const SARVAM_BASE_URL = "https://api.sarvam.ai";
 const LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}-IN$/i;
 const DEVANAGARI_PATTERN = /[\u0900-\u097f]/;
@@ -64,7 +71,7 @@ function apiKey() {
   return process.env.SARVAM_API_KEY;
 }
 
-async function errorMessage(response, fallback) {
+async function errorMessage(response: FetchResponse, fallback: string) {
   const body = await response.text();
   try {
     const parsed = JSON.parse(body);
@@ -75,11 +82,15 @@ async function errorMessage(response, fallback) {
 }
 
 export async function translateText(
-  input,
+  input: unknown,
   {
     sourceLanguageCode = "auto",
     targetLanguageCode = "en-IN",
-    fetchImpl = globalThis.fetch,
+    fetchImpl = globalThis.fetch as FetchImpl,
+  }: {
+    sourceLanguageCode?: string;
+    targetLanguageCode?: string;
+    fetchImpl?: FetchImpl;
   } = {}
 ) {
   const text = String(input || "").trim();
@@ -115,7 +126,7 @@ export async function translateText(
   if (!response.ok) {
     throw new Error(await errorMessage(response, "Text translation failed."));
   }
-  const data = await response.json();
+  const data = (await response.json()) as Record<string, unknown>;
   const translated = String(data.translated_text || "").trim();
   if (!translated) {
     throw new Error("Sarvam returned an empty translation.");
@@ -130,12 +141,17 @@ export async function translateText(
 }
 
 export async function synthesize(
-  text,
+  text: string,
   {
-    fetchImpl = globalThis.fetch,
+    fetchImpl = globalThis.fetch as FetchImpl,
     speaker = ttsSpeaker(),
     pace = ttsPace(),
     targetLanguageCode = speechLanguage(text),
+  }: {
+    fetchImpl?: FetchImpl;
+    speaker?: string;
+    pace?: number;
+    targetLanguageCode?: string;
   } = {}
 ) {
   const response = await fetchImpl(`${SARVAM_BASE_URL}/text-to-speech`, {
@@ -159,7 +175,7 @@ export async function synthesize(
       await errorMessage(response, "Spoken response is unavailable.")
     );
   }
-  const data = await response.json();
+  const data = (await response.json()) as { audios?: string[] };
   if (!data.audios?.[0]) {
     throw new Error("Sarvam returned no audio.");
   }

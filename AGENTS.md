@@ -12,6 +12,12 @@
 - The renderer is built by Vite into `dist/renderer`. Do not add a TypeScript
   compile step for `src/main` or `src/shared`, and do not emit `dist/main`,
   `dist/shared`, or `dist/test`.
+- The renderer is a multi-page Vite app: `src/renderer/app/index.html` (main
+  composer/palette window) and `src/renderer/settings/index.html` (MCP
+  settings window) are separate entries, each with its own `main.tsx`. There
+  is no page at the dev server root — `npm run dev:electron`'s `wait-on`
+  target must point at a real entry (`.../app/index.html`), not the bare
+  `http://127.0.0.1:5173`, or Electron never launches.
 
 ## TypeScript and testing
 
@@ -28,6 +34,44 @@
 - Add renderer-to-main channels and Zod validation together in
   `src/shared/ipc.ts`; main-process handlers must validate both the sender and
   incoming arguments before invoking a service.
+
+## UI component library and styling
+
+- Interactive UI primitives live in `src/renderer/ui/` (`button.tsx`,
+  `switch.tsx`, `segmented-control.tsx`, `text-field.tsx`, `text-area.tsx`,
+  `disclosure.tsx`), built on `react-aria-components`. This is the only
+  headless UI library used in the renderer — don't add Radix, Headless UI, or
+  similar alongside it.
+- Each component owns its appearance via a co-located plain CSS file
+  (`button.css`, `switch.css`, …), not a CSS Module. Do not add `*.module.css`
+  files or `import styles from "./x.module.css"` in this renderer — see the
+  CSP note below. Screens configure a component's look through props
+  (`variant`, `size`, `align`, `monospace`, `weight`, `bare`), not bespoke
+  `className`s.
+- No barrel `index.ts` in `src/renderer/ui/` (matches "avoid barrel files"
+  below); import each component directly from its file, e.g.
+  `import { Button } from "../../ui/button"`.
+- Component CSS files are wired in via `@import` at the top of
+  `src/renderer/styles.css`, which itself is loaded only through the static
+  `<link>` tag in each `index.html` — never via a JS `import` inside a
+  component file. Both `app/index.html` and `settings/index.html` enforce a
+  strict CSP (`style-src 'self'`, no `unsafe-inline`). A JS `import` of *any*
+  CSS (CSS Module or plain) makes Vite inject it as an inline `<style>` tag
+  in dev mode, which that CSP blocks — production builds are unaffected
+  since Vite extracts real `.css` files there, but `npm run dev` breaks. Do
+  not loosen the CSP to work around this; keep new component styles
+  CSP-safe via `@import` instead.
+- Both `index.html` files give their stylesheet `<link>` the id
+  `react-aria-pressable-style`. This pre-empts react-aria's `usePress` hook
+  from injecting its own `<style id="react-aria-pressable-style">` at
+  runtime (also blocked by the CSP above) — react-aria skips its own
+  injection when an element with that id already exists. If a future
+  react-aria version renames that internal id, this becomes a silent no-op
+  (the touch-action enhancement stops applying), not a break — don't treat
+  it as load-bearing beyond that.
+- Form fields follow native macOS convention: no visible border, no
+  background focus ring, plain text right-aligned within its row where it
+  sits opposite a label (see `text-field.css`, `.tf-align-end`).
 
 
 # Ultracite Code Standards

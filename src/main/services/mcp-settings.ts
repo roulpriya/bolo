@@ -11,6 +11,8 @@ const DEEPWIKI_SERVER: McpServerSettings = {
   headers: {},
   id: "deepwiki",
   name: "DeepWiki",
+  oauthClientId: "",
+  oauthClientSecret: "",
   transport: "streamable-http",
   url: "https://mcp.deepwiki.com/mcp",
 };
@@ -35,11 +37,16 @@ export interface McpServerSettings {
   headers: Record<string, string>;
   id: string;
   name: string;
+  oauthClientId: string;
+  oauthClientSecret: string;
   transport: "stdio" | "streamable-http" | "sse";
   url: string;
 }
 
-export type McpServerInput = Omit<McpServerSettings, "id"> & { id?: string };
+export type McpServerInput = Partial<Omit<McpServerSettings, "id" | "name">> & {
+  id?: string;
+  name: string;
+};
 
 /** Persists the user-managed local MCP server definitions in Bolo's app data. */
 export class McpSettingsService {
@@ -112,6 +119,14 @@ export class McpSettingsService {
     }
     const env = this.normalizeEnvironment(source.env);
     const headers = this.normalizeHeaders(source.headers);
+    const oauthClientId = String(source.oauthClientId ?? "").trim();
+    const oauthClientSecret = String(source.oauthClientSecret ?? "").trim();
+    if (oauthClientId.length > 1000 || oauthClientSecret.length > 10_000) {
+      throw new Error("Invalid MCP OAuth client credentials.");
+    }
+    if (oauthClientSecret && !oauthClientId) {
+      throw new Error("An MCP OAuth client secret requires a client ID.");
+    }
     const url = String(source.url ?? "").trim();
     this.validateRemoteUrl(transport, url);
     return {
@@ -130,6 +145,8 @@ export class McpSettingsService {
           ? source.id
           : crypto.randomUUID(),
       name: cleanString(source.name, 100, "name"),
+      oauthClientId,
+      oauthClientSecret,
       transport,
       url,
     };

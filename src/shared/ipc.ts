@@ -12,6 +12,7 @@ export const IPC = {
   getRun: "bolo:get-run",
   health: "bolo:health",
   hideWindow: "hide-window",
+  mcpOAuthEvent: "bolo:mcp-oauth-event",
   mcpOAuthStart: "bolo:mcp-oauth-start",
   mcpServersGet: "bolo:mcp-servers-get",
   mcpServersSave: "bolo:mcp-servers-save",
@@ -53,6 +54,8 @@ const mcpServer = z
       .regex(/^[a-zA-Z0-9_-]{1,100}$/)
       .optional(),
     name: z.string().trim().min(1).max(100),
+    oauthClientId: z.string().trim().max(1000).default(""),
+    oauthClientSecret: z.string().trim().max(10_000).default(""),
     transport: z.enum(["stdio", "streamable-http", "sse"]).default("stdio"),
     url: z.string().trim().max(4000).default(""),
   })

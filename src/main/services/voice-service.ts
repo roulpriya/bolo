@@ -1,5 +1,39 @@
 import crypto from "node:crypto";
+import type { EventEmitter } from "node:events";
 import WebSocket from "ws";
+import type { VoiceStartOptions } from "../../shared/ipc.ts";
+
+interface SocketLike extends EventEmitter {
+  close: (code?: number, reason?: string) => void;
+  readyState: number;
+  send: (data: string) => void;
+  terminate?: () => void;
+}
+
+// `ws`'s real constructor options type is stricter than what tests need to
+// pass a fake socket implementation, and the options are only ever forwarded
+// opaquely, never read here.
+type SocketImplCtor = {
+  // biome-ignore lint/suspicious/noExplicitAny: see comment above
+  new (url: string, options?: any): SocketLike;
+} & {
+  OPEN: number;
+};
+
+interface Session extends VoiceStartOptions {
+  audioBytes: number;
+  closed: boolean;
+  commitTimer: NodeJS.Timeout | null;
+  committed: boolean;
+  heardSpeech: boolean;
+  id: string;
+  inSpeech: boolean;
+  languageCode: string;
+  pendingChunks: Buffer[];
+  socket: SocketLike | null;
+  timers: Set<NodeJS.Timeout>;
+  transcripts: string[];
+}
 
 const SARVAM_STREAM_URL = "wss://api.sarvam.ai/speech-to-text/ws";
 const START_SPEECH_TIMEOUT_MS = 15_000;
@@ -70,14 +104,39 @@ function detectedLanguage(message) {
   ).trim();
 }
 
+type VoiceEvent = { sessionId: string; type: string } & Record<string, unknown>;
+
 export class VoiceService {
+  WebSocketImpl: SocketImplCtor;
+  onEvent: (event: VoiceEvent) => void;
+  onTranslation: (
+    session: Session,
+    transcript: string,
+    languageCode: string
+  ) => void | Promise<void>;
+  startSpeechTimeoutMs: number;
+  maxTurnMs: number;
+  turnCommitDelayMs: number;
+  session: Session | null;
+
   constructor({
-    WebSocketImpl = WebSocket,
+    WebSocketImpl = WebSocket as unknown as SocketImplCtor,
     onEvent = noop,
     onTranslation = noop,
     startSpeechTimeoutMs = START_SPEECH_TIMEOUT_MS,
     maxTurnMs = MAX_TURN_MS,
     turnCommitDelayMs = TURN_COMMIT_DELAY_MS,
+  }: {
+    WebSocketImpl?: SocketImplCtor;
+    onEvent?: (event: VoiceEvent) => void;
+    onTranslation?: (
+      session: Session,
+      transcript: string,
+      languageCode: string
+    ) => void | Promise<void>;
+    startSpeechTimeoutMs?: number;
+    maxTurnMs?: number;
+    turnCommitDelayMs?: number;
   } = {}) {
     this.WebSocketImpl = WebSocketImpl;
     this.onEvent = onEvent;
@@ -88,11 +147,11 @@ export class VoiceService {
     this.session = null;
   }
 
-  start(options) {
+  start(options: VoiceStartOptions) {
     if (this.session) {
       throw new Error("A microphone session is already active.");
     }
-    const session = {
+    const session: Session = {
       id: crypto.randomUUID(),
       ...options,
       audioBytes: 0,
@@ -138,7 +197,7 @@ export class VoiceService {
     return { sessionId: session.id };
   }
 
-  addTimer(session, delay, callback) {
+  addTimer(session: Session, delay: number, callback: () => void) {
     const timer = setTimeout(() => {
       session.timers.delete(timer);
       callback();
@@ -147,7 +206,7 @@ export class VoiceService {
     return timer;
   }
 
-  clearCommitTimer(session) {
+  clearCommitTimer(session: Session) {
     if (!session.commitTimer) {
       return;
     }
@@ -156,7 +215,7 @@ export class VoiceService {
     session.commitTimer = null;
   }
 
-  scheduleCommit(session) {
+  scheduleCommit(session: Session) {
     if (
       session.inSpeech ||
       !session.transcripts.length ||
@@ -172,7 +231,7 @@ export class VoiceService {
     });
   }
 
-  commitTranslation(session) {
+  commitTranslation(session: Session) {
     if (
       !this.isActive(session.id) ||
       session.committed ||
@@ -195,11 +254,12 @@ export class VoiceService {
       });
   }
 
-  isActive(id) {
-    return this.session?.id === id && !this.session.closed;
+  isActive(id: string) {
+    const { session } = this;
+    return session?.id === id && !session.closed;
   }
 
-  sendChunk(sessionId, bytes) {
+  sendChunk(sessionId: string, bytes: Buffer) {
     const { session } = this;
     if (!session || session.id !== sessionId || session.closed) {
       throw new Error("Voice session not found.");
@@ -209,15 +269,15 @@ export class VoiceService {
       this.fail(session, "The voice turn was too large.");
       return;
     }
-    if (session.socket.readyState !== this.WebSocketImpl.OPEN) {
+    if (session.socket?.readyState !== this.WebSocketImpl.OPEN) {
       session.pendingChunks.push(Buffer.from(bytes));
       return;
     }
     this.sendAudio(session, bytes);
   }
 
-  sendAudio(session, bytes) {
-    session.socket.send(
+  sendAudio(session: Session, bytes: Buffer) {
+    session.socket?.send(
       JSON.stringify({
         audio: {
           data: bytes.toString("base64"),
@@ -228,7 +288,7 @@ export class VoiceService {
     );
   }
 
-  receive(session, raw) {
+  receive(session: Session, raw: { toString: () => string }) {
     if (!this.isActive(session.id) || session.committed) {
       return;
     }
@@ -264,11 +324,11 @@ export class VoiceService {
     this.scheduleCommit(session);
   }
 
-  emit(session, type, extra = {}) {
+  emit(session: Session, type: string, extra: Record<string, unknown> = {}) {
     this.onEvent({ sessionId: session.id, type, ...extra });
   }
 
-  fail(session, error) {
+  fail(session: Session, error: unknown) {
     if (!this.isActive(session.id) || session.committed) {
       return;
     }
@@ -278,7 +338,7 @@ export class VoiceService {
     this.closeSocket(session);
   }
 
-  cancel(sessionId) {
+  cancel(sessionId: string) {
     const { session } = this;
     if (!session || session.id !== sessionId) {
       throw new Error("Voice session not found.");
@@ -288,16 +348,17 @@ export class VoiceService {
     this.closeSocket(session);
   }
 
-  closeSocket(session) {
-    if (session.socket?.readyState === this.WebSocketImpl.OPEN) {
-      session.socket.close(1000, "complete");
+  closeSocket(session: Session) {
+    const { socket } = session;
+    if (socket?.readyState === this.WebSocketImpl.OPEN) {
+      socket.close(1000, "complete");
     } else {
-      session.socket?.terminate?.();
+      socket?.terminate?.();
       this.finishClose(session);
     }
   }
 
-  finishClose(session) {
+  finishClose(session: Session) {
     if (session.closed) {
       return;
     }

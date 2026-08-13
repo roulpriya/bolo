@@ -5,12 +5,26 @@ import {
   permissionStatus,
   screenSize,
 } from "../platform/mac.ts";
+import type { Run } from "./run.ts";
 
 const MAX_ACTIONS = 20;
 const MAX_SAME_ACTION = 2;
 const MAX_WAIT_ACTIONS = 1;
 
-function stageFor(actionCount) {
+interface ComputerAction {
+  button?: string;
+  keys?: string[];
+  ms?: number;
+  path?: Array<{ x: number; y: number }>;
+  scroll_x?: number;
+  scroll_y?: number;
+  text?: string;
+  type: string;
+  x?: number;
+  y?: number;
+}
+
+function stageFor(actionCount: number) {
   if (actionCount < 3) {
     return "Working";
   }
@@ -20,7 +34,7 @@ function stageFor(actionCount) {
   return "Checking result";
 }
 
-function describeAction(action) {
+function describeAction(action: ComputerAction) {
   switch (action.type) {
     case "click":
     case "double_click":
@@ -41,10 +55,23 @@ function describeAction(action) {
   }
 }
 
-export class LocalMacComputer {
-  environment = "mac";
+type Screenshot = Awaited<ReturnType<typeof captureScreenshot>>;
 
-  constructor(runState) {
+export class LocalMacComputer {
+  environment = "mac" as const;
+  runState: Run;
+  actionCount: number;
+  lastActionSignature: string;
+  repeatedActions: number;
+  lastScreenshot: Screenshot | null;
+  screenDirty: boolean;
+  halted: boolean;
+  waitActions: number;
+  screenshotFiles: Set<string>;
+  displaySize: { height: number; width: number } | undefined;
+  dimensions: [number, number] | undefined;
+
+  constructor(runState: Run) {
     this.runState = runState;
     this.actionCount = 0;
     this.lastActionSignature = "";
@@ -73,7 +100,7 @@ export class LocalMacComputer {
   // image_url, which the Responses API then rejects with an opaque 400.
   // Aborting instead lets the current tool call finish with a valid
   // screenshot, and the next model request fails cleanly as an AbortError.
-  halt(message) {
+  halt(message: string) {
     if (this.halted) {
       return;
     }
@@ -98,8 +125,8 @@ export class LocalMacComputer {
     return this.lastScreenshot;
   }
 
-  async perform(action) {
-    if (this.runState.cancelled) {
+  async perform(action: ComputerAction) {
+    if (this.runState.abortController.signal.aborted) {
       this.halt("Stopped by the user.");
     }
     if (this.halted) {
@@ -149,14 +176,14 @@ export class LocalMacComputer {
   }
 
   async screenshot() {
-    if (this.runState.cancelled) {
+    if (this.runState.abortController.signal.aborted) {
       this.halt("Stopped by the user.");
     }
     if (this.halted) {
       return this.lastScreenshotBase64();
     }
 
-    let screenshot: Awaited<ReturnType<typeof captureScreenshot>> | null = null;
+    let screenshot: Screenshot | null = null;
     try {
       screenshot = await captureScreenshot(
         `run-${this.runState.id}-agent-${this.actionCount}`
@@ -185,15 +212,15 @@ export class LocalMacComputer {
     this.runState.finalScreenshotPath = null;
   }
 
-  async click(x, y, button = "left") {
+  async click(x: number, y: number, button = "left") {
     await this.perform({ button, type: "click", x, y });
   }
 
-  async doubleClick(x, y) {
+  async doubleClick(x: number, y: number) {
     await this.perform({ button: "left", type: "double_click", x, y });
   }
 
-  async scroll(x, y, scrollX, scrollY) {
+  async scroll(x: number, y: number, scrollX: number, scrollY: number) {
     await this.perform({
       scroll_x: scrollX,
       scroll_y: scrollY,
@@ -203,7 +230,7 @@ export class LocalMacComputer {
     });
   }
 
-  async type(text) {
+  async type(text: string) {
     await this.perform({ text, type: "type" });
   }
 
@@ -211,15 +238,15 @@ export class LocalMacComputer {
     await this.perform({ ms: 1000, type: "wait" });
   }
 
-  async move(x, y) {
+  async move(x: number, y: number) {
     await this.perform({ type: "move", x, y });
   }
 
-  async keypress(keys) {
+  async keypress(keys: string[]) {
     await this.perform({ keys, type: "keypress" });
   }
 
-  async drag(path) {
+  async drag(path: [number, number][]) {
     await this.perform({
       path: path.map(([x, y]) => ({ x, y })),
       type: "drag",

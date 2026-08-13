@@ -39,12 +39,16 @@ test("accepts remote HTTP MCP servers and request headers", async () => {
         env: {},
         headers: { Authorization: "Bearer local-token" },
         name: "Remote tools",
+        oauthClientId: "registered-client",
+        oauthClientSecret: "registered-secret",
         transport: "streamable-http",
         url: "https://mcp.example.com/mcp",
       },
     ]);
     assert.equal(saved.transport, "streamable-http");
     assert.equal(saved.headers.Authorization, "Bearer local-token");
+    assert.equal(saved.oauthClientId, "registered-client");
+    assert.equal(saved.oauthClientSecret, "registered-secret");
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -66,6 +70,8 @@ test("adds the DeepWiki public remote MCP server once", async () => {
       headers: {},
       id: "deepwiki",
       name: "DeepWiki",
+      oauthClientId: "",
+      oauthClientSecret: "",
       transport: "streamable-http",
       url: "https://mcp.deepwiki.com/mcp",
     });

@@ -5,7 +5,7 @@ import { test } from "vitest";
 
 test("preload exposes only the direct agent and voice contract", async () => {
   const source = await readFile(
-    path.join(process.cwd(), "src", "preload", "index.cjs"),
+    path.join(process.cwd(), "src", "preload", "index.cts"),
     "utf8"
   );
   for (const method of [
@@ -33,7 +33,7 @@ test("preload exposes only the direct agent and voice contract", async () => {
     assert.doesNotMatch(source, new RegExp(removed));
   }
   assert.doesNotMatch(source, /exposeInMainWorld\([^)]*ipcRenderer/s);
-  assert.match(source, /removeListener\("bolo:voice-event"/);
+  assert.match(source, /removeListener\(IPC\.voiceEvent/);
 });
 
 test("main-process IPC handlers validate the sender", async () => {

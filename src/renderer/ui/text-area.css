@@ -1,0 +1,19 @@
+.field-inline {
+  display: contents;
+}
+.text-area {
+  width: 100%;
+  max-height: 92px;
+  padding: 10px 0;
+  overflow-y: auto;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--text);
+  resize: none;
+  outline: 0;
+  background: transparent;
+  border: 0;
+}
+.text-area::placeholder {
+  color: #74747d;
+}

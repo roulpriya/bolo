@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
 import { test } from "vitest";
-import { DesktopService } from "../src/main/services/desktop-service.ts";
+import {
+  DesktopService,
+  type SarvamLike,
+} from "../src/main/services/desktop-service.ts";
 import { RunHistory } from "../src/main/state/run-history.ts";
 
 class FakeAgent {
@@ -9,11 +12,20 @@ class FakeAgent {
     return true;
   }
 
-  createReminder({ title, scheduledFor }) {
+  createReminder({
+    title,
+    scheduledFor,
+  }: {
+    title: string;
+    scheduledFor: string;
+  }) {
     return { scheduledFor, title };
   }
 
-  execute(run, askUser) {
+  execute(
+    run: { input: string },
+    askUser: (prompt: string, kind: string) => Promise<string>
+  ) {
     if (run.input === "ask") {
       return askUser("Which city?", "input").then(
         (answer) => `Using ${answer}.`
@@ -28,12 +40,15 @@ class FakeAgent {
 }
 
 class FakeVoice {
-  start(options) {
+  options: unknown;
+  chunk: { bytes: Buffer; id: string } | undefined;
+
+  start(options: unknown) {
     this.options = options;
     return { sessionId: "voice-1" };
   }
 
-  sendChunk(id, bytes) {
+  sendChunk(id: string, bytes: Buffer) {
     this.chunk = { bytes, id };
   }
 
@@ -46,7 +61,7 @@ class FakeVoice {
   }
 }
 
-function service({ sarvam } = {}) {
+function service({ sarvam }: { sarvam?: SarvamLike } = {}) {
   return new DesktopService({
     agentService: new FakeAgent(),
     history: new RunHistory(),
@@ -86,6 +101,7 @@ test("question tool pauses and resumes the same run", async () => {
   await new Promise((resolve) => setImmediate(resolve));
   let run = desktop.getRun(started.id);
   assert.equal(run.state, "waiting_for_user");
+  assert.ok(run.pendingQuestion);
   assert.equal(run.pendingQuestion.prompt, "Which city?");
 
   await desktop.answerRun(started.id, run.pendingQuestion.id, "Pune");
@@ -101,6 +117,7 @@ test("asks for a reminder title without waiting for the planning model", async (
   await new Promise((resolve) => setImmediate(resolve));
   let run = desktop.getRun(started.id);
   assert.equal(run.state, "waiting_for_user");
+  assert.ok(run.pendingQuestion);
   assert.match(
     run.pendingQuestion.prompt,
     /What should I remind you about at 9:00 PM\?/
@@ -110,7 +127,7 @@ test("asks for a reminder title without waiting for the planning model", async (
   await new Promise((resolve) => setImmediate(resolve));
   run = desktop.getRun(started.id);
   assert.equal(run.state, "completed");
-  assert.match(run.result, /Reminder set for 9:00 PM: Call Maya/);
+  assert.match(String(run.result), /Reminder set for 9:00 PM: Call Maya/);
   assert.equal(
     run.toolActivity.find((item) => item.tool === "create_reminder")?.status,
     "completed"
@@ -130,7 +147,7 @@ test("localizes follow-up questions, typed answers, and final results", async ()
           "Which city?": "कौन सा शहर?",
         };
         return {
-          sourceLanguageCode: options.sourceLanguageCode,
+          sourceLanguageCode: String(options?.sourceLanguageCode),
           text: outputs[text] || text,
         };
       },
@@ -140,6 +157,7 @@ test("localizes follow-up questions, typed answers, and final results", async ()
   await new Promise((resolve) => setImmediate(resolve));
   let run = desktop.getRun(started.id);
   assert.equal(run.languageCode, "hi-IN");
+  assert.ok(run.pendingQuestion);
   assert.equal(run.pendingQuestion.prompt, "कौन सा शहर?");
 
   await desktop.answerRun(started.id, run.pendingQuestion.id, "Pune");
@@ -162,10 +180,10 @@ test("localizes follow-up questions, typed answers, and final results", async ()
 
 test("routes a translated voice command with its detected language", async () => {
   const desktop = service();
-  let translatedEvent: Record<string, string> | null = null;
+  const translatedEvents: Record<string, string>[] = [];
   desktop.on("voice-event", (event) => {
     if (event.type === "translated") {
-      translatedEvent = event;
+      translatedEvents.push(event);
     }
   });
   await desktop.commitVoiceTranslation(
@@ -173,6 +191,8 @@ test("routes a translated voice command with its detected language", async () =>
     "Open Notes",
     "mr-IN"
   );
+  const translatedEvent = translatedEvents.at(-1);
+  assert.ok(translatedEvent);
   const run = desktop.getRun(translatedEvent.runId);
   assert.equal(translatedEvent.languageCode, "mr-IN");
   assert.equal(run.languageCode, "mr-IN");
@@ -180,7 +200,10 @@ test("routes a translated voice command with its detected language", async () =>
 
 test("rejects stale answers and malformed voice requests", () => {
   const desktop = service();
-  assert.throws(() => desktop.startVoice({ purpose: "unknown" }), /purpose/i);
+  assert.throws(
+    () => desktop.startVoice({ purpose: "unknown" as any }),
+    /purpose/i
+  );
   assert.throws(
     () =>
       desktop.startVoice({
@@ -190,5 +213,8 @@ test("rejects stale answers and malformed voice requests", () => {
       }),
     /no longer waiting/i
   );
-  assert.throws(() => desktop.sendVoiceChunk("x", new Uint8Array()), /audio/i);
+  assert.throws(
+    () => desktop.sendVoiceChunk("x", new ArrayBuffer(0)),
+    /audio/i
+  );
 });

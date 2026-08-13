@@ -8,6 +8,8 @@ interface McpServer {
   headers: Record<string, string>;
   id: string;
   name: string;
+  oauthClientId: string;
+  oauthClientSecret: string;
   transport: "stdio" | "streamable-http" | "sse";
   url: string;
 }
@@ -22,7 +24,16 @@ declare global {
       onNewCommand: (callback: () => void) => () => void;
       health: () => Promise<unknown>;
       getMcpServers: () => Promise<McpServer[]>;
-      startMcpOAuth: (id: string) => Promise<{ ok: true }>;
+      startMcpOAuth: (
+        id: string
+      ) => Promise<{ status: "connected" | "pending" }>;
+      onMcpOAuthEvent: (
+        callback: (event: {
+          error?: string;
+          serverId?: string;
+          status: "connected" | "failed";
+        }) => void
+      ) => () => void;
       saveMcpServers: (servers: McpServer[]) => Promise<McpServer[]>;
       openSettings: () => Promise<{ ok: true }>;
       startVoice: (

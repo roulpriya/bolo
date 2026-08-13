@@ -3,7 +3,7 @@ import { test } from "vitest";
 import { RemindersService } from "../src/main/services/reminders.ts";
 
 test("creates a reminder with argv and opens Reminders", async () => {
-  const calls: unknown[][] = [];
+  const calls: [string, string[], AbortSignal?][] = [];
   const service = new RemindersService({
     execute: (...args) => {
       calls.push(args);

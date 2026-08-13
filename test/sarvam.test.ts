@@ -24,22 +24,25 @@ test("rejects a configured voice that is not a supported female Bulbul v3 speake
 
 test("sends the selected female voice to Sarvam TTS", async () => {
   process.env.SARVAM_API_KEY = "sarvam_test";
-  let request: { options: RequestInit; url: string } | null = null;
+  const requests: Array<{ options: RequestInit; url: string }> = [];
   const audio = await synthesize("नमस्ते", {
     fetchImpl: (url, options) => {
-      request = { options, url };
-      return {
+      requests.push({ options, url });
+      return Promise.resolve({
         json: async () => ({
           audios: [Buffer.from("test-audio").toString("base64")],
         }),
         ok: true,
-      };
+        text: async () => "",
+      });
     },
     speaker: "priya",
   });
 
+  const request = requests.at(-1);
+  assert.ok(request);
   assert.equal(request.url, "https://api.sarvam.ai/text-to-speech");
-  assert.equal(JSON.parse(request.options.body).speaker, "priya");
+  assert.equal(JSON.parse(String(request.options.body)).speaker, "priya");
   assert.equal(audio.toString(), "test-audio");
 });
 
@@ -60,22 +63,25 @@ test("normalizes detected BCP-47 language codes", () => {
 
 test("translates text with explicit source and target languages", async () => {
   process.env.SARVAM_API_KEY = "sarvam_test";
-  let request: { options: RequestInit; url: string } | null = null;
+  const requests: Array<{ options: RequestInit; url: string }> = [];
   const translated = await translateText("Which city?", {
     fetchImpl: (url, options) => {
-      request = { options, url };
-      return {
+      requests.push({ options, url });
+      return Promise.resolve({
         json: async () => ({
           source_language_code: "en-IN",
           translated_text: "कौन सा शहर?",
         }),
         ok: true,
-      };
+        text: async () => "",
+      });
     },
     sourceLanguageCode: "en-IN",
     targetLanguageCode: "hi-IN",
   });
-  const body = JSON.parse(request.options.body);
+  const request = requests.at(-1);
+  assert.ok(request);
+  const body = JSON.parse(String(request.options.body));
   assert.equal(request.url, "https://api.sarvam.ai/translate");
   assert.equal(body.source_language_code, "en-IN");
   assert.equal(body.target_language_code, "hi-IN");

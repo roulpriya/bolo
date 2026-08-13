@@ -1,3 +1,4 @@
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import {
   Agent,
   tool as agentTool,
@@ -12,11 +13,20 @@ import {
   webSearchTool,
 } from "@openai/agents";
 import { z } from "zod";
+import type { McpServerSettings } from "../services/mcp-settings.ts";
 import { RemindersService } from "../services/reminders.ts";
 import { BrowserPageComputer, LocalBrowserManager } from "./local-browser.ts";
 import { LocalMacComputer } from "./local-computer.ts";
 import { LocalFiles } from "./local-files.ts";
 import { LocalShell, shellRisk } from "./local-shell.ts";
+import type { Run } from "./run.ts";
+
+// The OpenAI Agents SDK's run-item/tool-call payloads are a large, evolving
+// discriminated union keyed by fields we only ever read through optional
+// chaining. `unknown` would force a cast at every access with no added
+// safety, so this alias documents the escape hatch in one place.
+// biome-ignore lint/suspicious/noExplicitAny: see comment above
+type SdkPayload = any;
 
 const planningModel = process.env.OPENAI_AGENT_MODEL || "gpt-5.6-terra";
 const computerModel = process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6";
@@ -30,16 +40,16 @@ const Verification = z.object({
   status: z.enum(["verified", "failed", "uncertain"]),
 });
 
-function affirmative(answer) {
+function affirmative(answer: unknown) {
   return AFFIRMATIVE_PATTERN.test(String(answer).trim());
 }
 
-function activity(run, toolName, progress) {
+function activity(run: Run, toolName: string, progress: string) {
   run.currentTool = toolName;
   run.progress = progress;
 }
 
-function telemetryText(value, maxLength = 12_000) {
+function telemetryText(value: unknown, maxLength = 12_000) {
   let text = "";
   if (value instanceof Error) {
     text = value.message;
@@ -64,7 +74,7 @@ function telemetryText(value, maxLength = 12_000) {
     .slice(0, maxLength);
 }
 
-function toolCallDetails(toolDefinition, toolCall) {
+function toolCallDetails(toolDefinition: SdkPayload, toolCall: SdkPayload) {
   const name =
     toolCall?.name || toolDefinition?.name || toolCall?.type || "tool";
   if (toolCall?.type === "computer_call") {
@@ -76,7 +86,13 @@ function toolCallDetails(toolDefinition, toolCall) {
   return { input: toolCall?.arguments || toolCall?.output || {}, name };
 }
 
-export function recordToolStart(run, toolDefinition, toolCall) {
+type RunActivity = Pick<Run, "currentTool" | "progress" | "toolActivity">;
+
+export function recordToolStart(
+  run: RunActivity,
+  toolDefinition: SdkPayload,
+  toolCall: SdkPayload
+) {
   const { name, input } = toolCallDetails(toolDefinition, toolCall);
   const serializedInput = telemetryText(input);
   const existing = [...run.toolActivity]
@@ -110,7 +126,12 @@ export function recordToolStart(run, toolDefinition, toolCall) {
   }
 }
 
-export function recordToolEnd(run, toolDefinition, result, toolCall) {
+export function recordToolEnd(
+  run: Pick<Run, "toolActivity">,
+  toolDefinition: SdkPayload,
+  result: unknown,
+  toolCall: SdkPayload
+) {
   const { name } = toolCallDetails(toolDefinition, toolCall);
   const id = toolCall?.callId;
   const item = [...run.toolActivity]
@@ -131,7 +152,10 @@ export function recordToolEnd(run, toolDefinition, result, toolCall) {
   item.completedAt = Date.now();
 }
 
-export function failOpenToolCalls(run, error) {
+export function failOpenToolCalls(
+  run: Pick<Run, "toolActivity">,
+  error: unknown
+) {
   for (const item of run.toolActivity) {
     if (item.kind === "tool_call" && item.status === "running") {
       item.status = "failed";
@@ -143,7 +167,10 @@ export function failOpenToolCalls(run, error) {
 }
 
 /** Pi-style system prompt with Bolo's macOS-specific execution rules. */
-export function buildBoloInstructions(workspaceDirectory, now = new Date()) {
+export function buildBoloInstructions(
+  workspaceDirectory: string,
+  now: Date = new Date()
+) {
   const systemTime = now instanceof Date ? now : new Date(now);
   const systemDate = systemTime.toLocaleDateString("en-CA", {
     day: "numeric",
@@ -188,7 +215,9 @@ System date: ${systemDate}
 System time: ${systemClockTime}`;
 }
 
-function questionTool(run, askUser) {
+type AskUser = (prompt: string, kind: string) => Promise<string>;
+
+function questionTool(run: Run, askUser: AskUser) {
   return agentTool({
     description:
       "Ask the user one necessary question and wait for their voice or typed answer. Never ask for passwords, API keys, OTPs, or other credential values; ask the user to type credentials directly into the visible app and then say done.",
@@ -205,14 +234,30 @@ function questionTool(run, askUser) {
 }
 
 export class AgentService {
+  workspaceDirectory: string;
+  mcpServersProvider: () => Promise<McpServerSettings[]>;
+  mcpConnectionIssueProvider?: (server: McpServerSettings) => string | null;
+  mcpOAuthProvider?: (server: McpServerSettings) => OAuthClientProvider;
+  browser: LocalBrowserManager;
+  runner: Runner;
+  reminders: RemindersService;
+
   constructor({
     workspaceDirectory,
     browserProfileDirectory,
+    mcpConnectionIssueProvider,
     mcpOAuthProvider,
     mcpServersProvider,
+  }: {
+    workspaceDirectory: string;
+    browserProfileDirectory: string;
+    mcpConnectionIssueProvider?: (server: McpServerSettings) => string | null;
+    mcpOAuthProvider?: (server: McpServerSettings) => OAuthClientProvider;
+    mcpServersProvider?: () => Promise<McpServerSettings[]>;
   }) {
     this.workspaceDirectory = workspaceDirectory;
     this.mcpServersProvider = mcpServersProvider || (async () => []);
+    this.mcpConnectionIssueProvider = mcpConnectionIssueProvider;
     this.mcpOAuthProvider = mcpOAuthProvider;
     this.browser = new LocalBrowserManager({
       profileDirectory: browserProfileDirectory,
@@ -229,16 +274,19 @@ export class AgentService {
     return this.browser.available();
   }
 
-  createReminder(details) {
+  createReminder(details: {
+    title: string;
+    scheduledFor: string;
+    signal?: AbortSignal;
+  }) {
     return this.reminders.create(details);
   }
 
-
   specialistComputerTool(
-    _run,
-    computer,
-    askUser,
-    label
+    _run: Run,
+    computer: BrowserPageComputer | LocalMacComputer,
+    askUser: AskUser,
+    label: string
   ): ReturnType<typeof computerTool> {
     return computerTool({
       computer,
@@ -257,7 +305,7 @@ export class AgentService {
     });
   }
 
-  async runBrowserSpecialist(run, taskText, askUser) {
+  async runBrowserSpecialist(run: Run, taskText: string, askUser: AskUser) {
     const page = await this.browser.newPage();
     const computer = new BrowserPageComputer(page, {
       manager: this.browser,
@@ -319,7 +367,7 @@ only with visible evidence.`,
     return result.finalOutput;
   }
 
-  async runComputerSpecialist(run, taskText, askUser) {
+  async runComputerSpecialist(run: Run, taskText: string, askUser: AskUser) {
     const computer = new LocalMacComputer(run);
     const agent = new Agent({
       instructions: `Perform exactly the supplied task through visible macOS UI.
@@ -354,7 +402,7 @@ and say done; never request their value. Verify the final state visibly.`,
     }
   }
 
-  createTools(run, askUser) {
+  createTools(run: Run, askUser: AskUser) {
     const ask = questionTool(run, askUser);
     let pendingShellDescription = "a consequential local command";
     const localShell = new LocalShell({
@@ -503,14 +551,37 @@ and say done; never request their value. Verify the final state visibly.`,
     ];
   }
 
-  async createMcpTools(run) {
+  async createMcpTools(run: Run) {
     const configuredServers = await this.mcpServersProvider();
     const enabledServers = configuredServers.filter((server) => server.enabled);
     if (!enabledServers.length) {
       return { close: async () => undefined, tools: [] };
     }
     activity(run, "mcp", "Connecting MCP servers");
-    const servers = enabledServers.map((server) => {
+    const unavailable = enabledServers.flatMap((server) => {
+      const issue = this.mcpConnectionIssueProvider?.(server);
+      return issue ? [new Error(`${server.name}: ${issue}`)] : [];
+    });
+    const connectableServers = enabledServers.filter(
+      (server) => !this.mcpConnectionIssueProvider?.(server)
+    );
+    if (!connectableServers.length) {
+      run.toolActivity.push({
+        at: Date.now(),
+        detail: "MCP servers need attention in Settings",
+        id: `mcp:${Date.now()}`,
+        input: "",
+        kind: "activity",
+        output: telemetryText(
+          unavailable.map((error) => error.message),
+          2000
+        ),
+        status: "failed",
+        tool: "mcp",
+      });
+      return { close: async () => undefined, tools: [] };
+    }
+    const servers = connectableServers.map((server) => {
       if (server.transport === "streamable-http") {
         return new MCPServerStreamableHttp({
           authProvider: this.mcpOAuthProvider?.(server),
@@ -532,7 +603,11 @@ and say done; never request their value. Verify the final state visibly.`,
       return new MCPServerStdio({
         args: server.args,
         command: server.command,
-        env: { ...process.env, ...server.env },
+        env: Object.fromEntries(
+          Object.entries({ ...process.env, ...server.env }).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined
+          )
+        ),
         name: server.name,
         timeout: MCP_REQUEST_TIMEOUT_MS,
       });
@@ -544,7 +619,7 @@ and say done; never request their value. Verify the final state visibly.`,
       strict: false,
     });
     try {
-      const failed = [...connected.errors.values()];
+      const failed = [...unavailable, ...connected.errors.values()];
       if (failed.length) {
         run.toolActivity.push({
           at: Date.now(),
@@ -571,7 +646,11 @@ and say done; never request their value. Verify the final state visibly.`,
     }
   }
 
-  async execute(run, askUser, onTextDelta = noop) {
+  async execute(
+    run: Run,
+    askUser: AskUser,
+    onTextDelta: (delta: string) => void = noop
+  ) {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is not configured.");
     }
@@ -601,14 +680,14 @@ and say done; never request their value. Verify the final state visibly.`,
         if (event.type !== "run_item_stream_event") {
           continue;
         }
-        const rawItem = event.item?.rawItem;
+        const rawItem = event.item?.rawItem as SdkPayload;
         if (event.name === "tool_called" && rawItem) {
           recordToolStart(run, { name: rawItem.name }, rawItem);
         } else if (event.name === "tool_output" && rawItem) {
           recordToolEnd(
             run,
             { name: rawItem.name },
-            event.item.output,
+            (event.item as SdkPayload).output,
             rawItem
           );
         }

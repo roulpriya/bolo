@@ -1,7 +1,18 @@
-import { Terminal } from "lucide-react";
-import { type ToggleEvent, useCallback, useEffect, useState } from "react";
+import {
+  Bell,
+  BookOpen,
+  Globe,
+  type LucideIcon,
+  MessageCircleQuestionMark,
+  MousePointerClick,
+  PencilLine,
+  Search,
+  Terminal,
+} from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Disclosure } from "../../ui/disclosure";
 import type { Run, ToolActivity } from "../types";
 
 interface TerminalResult {
@@ -67,36 +78,39 @@ function TerminalPanel({
 }) {
   const results = terminalResults(output);
   return (
-    <section className="terminal-panel">
-      <div className="terminal-command">
-        <span aria-hidden="true">$</span>
-        <code>{command}</code>
+    <div className="terminal-panel">
+      <div className="terminal-line">
+        <span aria-hidden="true" className="terminal-prompt">
+          $
+        </span>
+        {command}
       </div>
       {results?.map((result) => (
-        <div
-          className="terminal-result"
+        <Fragment
           key={`${result.outcome?.exitCode}-${result.stdout}-${result.stderr}`}
         >
           {Boolean(result.stdout) && (
-            <pre className="terminal-stdout">{result.stdout}</pre>
+            <div className="terminal-line terminal-stdout">{result.stdout}</div>
           )}
           {Boolean(result.stderr) && (
-            <pre className="terminal-stderr">{result.stderr}</pre>
+            <div className="terminal-line terminal-stderr">{result.stderr}</div>
           )}
           {result.outcome?.type === "exit" && (
-            <span className="terminal-exit">
-              Exit {result.outcome.exitCode ?? "unknown"}
-            </span>
+            <div className="terminal-line terminal-exit">
+              exit {result.outcome.exitCode ?? "unknown"}
+            </div>
           )}
-        </div>
+        </Fragment>
       ))}
       {Boolean(output) && !results && (
-        <pre className="terminal-stderr">{output}</pre>
+        <div className="terminal-line terminal-stderr">{output}</div>
       )}
       {state === "running" && (
-        <p className="tool-pending">Awaiting command output…</p>
+        <div className="terminal-line tool-pending">
+          Awaiting command output…
+        </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -137,11 +151,32 @@ function ToolContent({
   );
 }
 
+const TOOL_VERBS: Record<string, string> = {
+  ask_user_question: "Asked",
+  bash: "Ran",
+  browser_use: "Used browser for",
+  computer_use: "Used computer for",
+  create_reminder: "Created reminder",
+  edit: "Edited",
+  read: "Read",
+  web_search: "Searched",
+  write: "Wrote",
+};
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  ask_user_question: MessageCircleQuestionMark,
+  bash: Terminal,
+  browser_use: Globe,
+  computer_use: MousePointerClick,
+  create_reminder: Bell,
+  edit: PencilLine,
+  read: BookOpen,
+  web_search: Search,
+  write: PencilLine,
+};
+const FILE_REF_TOOLS = new Set(["edit", "read", "write"]);
+
 function ToolCall({ item }: { item: ToolActivity & { kind: "tool_call" } }) {
   const [isOpen, setIsOpen] = useState(false);
-  const handleToggle = useCallback((event: ToggleEvent<HTMLDetailsElement>) => {
-    setIsOpen(event.currentTarget.open);
-  }, []);
   const state = item.status || "running";
   const isBash = item.tool === "bash";
   let input: unknown = item.input;
@@ -150,20 +185,9 @@ function ToolCall({ item }: { item: ToolActivity & { kind: "tool_call" } }) {
   } catch {
     // Tool inputs may be plain text rather than serialized JSON.
   }
-  const labels: Record<string, string> = {
-    ask_user_question: "Asked a question",
-    bash: "Ran command",
-    browser_use: "Used browser",
-    computer_use: "Used computer",
-    create_reminder: "Created reminder",
-    edit: "Edited file",
-    read: "Read file",
-    web_search: "Searched the web",
-    write: "Wrote file",
-  };
-  const stateLabel =
-    { completed: "Done", failed: "Failed", running: "Working" }[state] ||
-    "Done";
+  const verb = TOOL_VERBS[item.tool] || `Used ${item.tool}`;
+  const Icon = TOOL_ICONS[item.tool] || Terminal;
+  const isFileRef = FILE_REF_TOOLS.has(item.tool);
   const preview =
     typeof input === "object" && input
       ? (input as Record<string, unknown>).command ||
@@ -178,27 +202,32 @@ function ToolCall({ item }: { item: ToolActivity & { kind: "tool_call" } }) {
       ? String((input as { command: unknown }).command)
       : String(preview);
   return (
-    <details
+    <Disclosure
       className={`tool-call ${state}`}
-      onToggle={handleToggle}
-      open={isOpen}
+      isExpanded={isOpen}
+      onExpandedChange={setIsOpen}
+      trigger={
+        <>
+          <Icon aria-hidden="true" className="tool-icon" />
+          <span className="tool-call-line">
+            <span className="tool-call-verb">{verb}</span>
+            {Boolean(preview) && (
+              <span
+                className={
+                  isFileRef
+                    ? "tool-call-target tool-call-target-file"
+                    : "tool-call-target"
+                }
+                title={String(preview)}
+              >
+                {String(preview)}
+              </span>
+            )}
+          </span>
+        </>
+      }
+      triggerClassName="tool-call-trigger"
     >
-      <summary>
-        {isBash ? (
-          <Terminal aria-hidden="true" className="tool-icon" />
-        ) : (
-          <span aria-hidden="true" className="tool-status-dot" />
-        )}
-        <span className="tool-call-main">
-          <strong>
-            {isBash ? "Terminal" : labels[item.tool] || `Used ${item.tool}`}
-          </strong>
-          {Boolean(preview) && (
-            <code title={String(preview)}>{String(preview)}</code>
-          )}
-        </span>
-        <span className="tool-call-state">{stateLabel}</span>
-      </summary>
       <div className="tool-call-content">
         <ToolContent
           command={command}
@@ -207,7 +236,7 @@ function ToolCall({ item }: { item: ToolActivity & { kind: "tool_call" } }) {
           state={state}
         />
       </div>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -218,22 +247,9 @@ export function Progress({ run }: { run: Run | null }) {
       setIsCompleteOpen(false);
     }
   }, [run?.finished]);
-  const handleCompleteToggle = useCallback(
-    (event: ToggleEvent<HTMLDetailsElement>) => {
-      setIsCompleteOpen(event.currentTarget.open);
-    },
-    []
-  );
-  const progressRow = (
-    <>
-      {!run?.finished && <span aria-hidden="true" className="spinner" />}
-      <strong>
-        {run?.progress === "Starting agent"
-          ? "Working"
-          : run?.progress || "Working"}
-      </strong>
-    </>
-  );
+  const progressLabel =
+    run?.progress === "Starting agent" ? "Working" : run?.progress || "Working";
+  const summaryRow = <span className="progress-summary">{progressLabel}</span>;
   const toolCalls = run?.toolActivity?.filter(
     (item): item is ToolActivity & { kind: "tool_call" } =>
       item.kind === "tool_call"
@@ -249,25 +265,26 @@ export function Progress({ run }: { run: Run | null }) {
     const response = run.response || run.result;
     return (
       <div className="progress-card progress-complete">
-        {Boolean(response) && <AgentResponse>{response}</AgentResponse>}
         {toolTimeline ? (
-          <details
+          <Disclosure
             className="progress-tools"
-            onToggle={handleCompleteToggle}
-            open={isCompleteOpen}
+            isExpanded={isCompleteOpen}
+            onExpandedChange={setIsCompleteOpen}
+            trigger={summaryRow}
+            triggerClassName="progress-row progress-row-muted"
           >
-            <summary className="progress-row">{progressRow}</summary>
             {toolTimeline}
-          </details>
+          </Disclosure>
         ) : (
-          <div className="progress-row">{progressRow}</div>
+          <div className="progress-row progress-row-muted">{summaryRow}</div>
         )}
+        {Boolean(response) && <AgentResponse>{response}</AgentResponse>}
       </div>
     );
   }
   return (
     <div className="progress-card">
-      <div className="progress-row">{progressRow}</div>
+      <div className="progress-row progress-row-muted">{summaryRow}</div>
       {toolTimeline}
     </div>
   );

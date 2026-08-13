@@ -7,6 +7,7 @@ test("recognizes a reminder time and uses tomorrow when today's time has passed"
     "Set a reminder for 9 PM",
     new Date("2026-08-11T22:00:00+05:30")
   );
+  assert.ok(intent);
   assert.equal(intent.timeLabel, "9:00 PM");
   assert.equal(intent.scheduledFor, "2026-08-12T15:30:00.000Z");
 });

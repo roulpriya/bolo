@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 
-function run(command, args, signal) {
+function run(
+  command: string,
+  args: string[],
+  signal?: AbortSignal
+): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException("Aborted", "AbortError"));
@@ -33,12 +37,28 @@ function run(command, args, signal) {
   });
 }
 
+type Execute = (
+  command: string,
+  args: string[],
+  signal?: AbortSignal
+) => Promise<string> | string;
+
 export class RemindersService {
-  constructor({ execute = run } = {}) {
+  execute: Execute;
+
+  constructor({ execute = run }: { execute?: Execute } = {}) {
     this.execute = execute;
   }
 
-  async create({ title, scheduledFor, signal }) {
+  async create({
+    title,
+    scheduledFor,
+    signal,
+  }: {
+    title: string;
+    scheduledFor: string;
+    signal?: AbortSignal;
+  }) {
     const name = String(title || "").trim();
     const date = new Date(scheduledFor);
     if (!name || name.length > 500) {
@@ -72,5 +92,4 @@ export class RemindersService {
       title: name,
     };
   }
-
 }

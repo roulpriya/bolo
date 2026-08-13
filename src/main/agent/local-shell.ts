@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
 
+interface CommandResult {
+  outcome: { type: "timeout" } | { exitCode: number | null; type: "exit" };
+  stderr: string;
+  stdout: string;
+}
+
 const MAX_COMMANDS = 8;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 120_000;
@@ -56,14 +62,30 @@ function bounded(value, fallback, max) {
 }
 
 export class LocalShell {
-  constructor({ cwd, signal, onActivity = noop }) {
+  cwd: string;
+  signal: AbortSignal;
+  onActivity: (message: string) => void;
+
+  constructor({
+    cwd,
+    signal,
+    onActivity = noop,
+  }: {
+    cwd: string;
+    signal: AbortSignal;
+    onActivity?: (message: string) => void;
+  }) {
     this.cwd = cwd;
     this.signal = signal;
     this.onActivity = onActivity;
   }
 
-  async run(action) {
-    const commands = Array.isArray(action?.commands) ? action.commands : [];
+  async run(action: {
+    commands?: unknown[];
+    timeoutMs?: number;
+    maxOutputLength?: number;
+  }) {
+    const commands = Array.isArray(action.commands) ? action.commands : [];
     if (!commands.length || commands.length > MAX_COMMANDS) {
       throw new Error(`Shell accepts between 1 and ${MAX_COMMANDS} commands.`);
     }
@@ -82,7 +104,7 @@ export class LocalShell {
       DEFAULT_OUTPUT_LENGTH,
       MAX_OUTPUT_LENGTH
     );
-    const output: unknown[] = [];
+    const output: CommandResult[] = [];
     for (const command of commands) {
       this.onActivity("Running a local command");
       output.push(
@@ -93,7 +115,11 @@ export class LocalShell {
     return { maxOutputLength, output };
   }
 
-  runCommand(command, timeoutMs, maxOutputLength) {
+  runCommand(
+    command: string,
+    timeoutMs: number,
+    maxOutputLength: number
+  ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       if (this.signal.aborted) {
         reject(new DOMException("Aborted", "AbortError"));

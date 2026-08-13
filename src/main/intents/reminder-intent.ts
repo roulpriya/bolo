@@ -4,7 +4,7 @@ const TIME_PATTERN =
   /\b(?:at|for)\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i;
 const PM_PATTERN = /p/i;
 
-export function reminderIntent(input, now = new Date()) {
+export function reminderIntent(input: unknown, now: Date = new Date()) {
   const text = String(input || "").trim();
   if (!REMINDER_PATTERN.test(text)) {
     return null;

@@ -15,13 +15,13 @@ const SENSITIVE_FILE_PATTERN =
   /^(?:id_rsa|id_ed25519|credentials(?:\.json)?)$/i;
 const noop = () => undefined;
 
-function checkAbort(signal) {
+function checkAbort(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new DOMException("Aborted", "AbortError");
   }
 }
 
-function isSensitivePath(filePath) {
+function isSensitivePath(filePath: string) {
   const name = path.basename(filePath).toLowerCase();
   return (
     ((name === ".env" || name.startsWith(".env.")) &&
@@ -32,14 +32,35 @@ function isSensitivePath(filePath) {
 
 /** Pi-style file tools, scoped to the agent workspace. */
 export class LocalFiles {
-  constructor({ cwd, signal, onActivity = noop }) {
+  cwd: string;
+  signal: AbortSignal;
+  onActivity: (message: string) => void;
+  rootPromise: Promise<string>;
+
+  constructor({
+    cwd,
+    signal,
+    onActivity = noop,
+  }: {
+    cwd: string;
+    signal: AbortSignal;
+    onActivity?: (message: string) => void;
+  }) {
     this.cwd = path.resolve(cwd);
     this.signal = signal;
     this.onActivity = onActivity;
     this.rootPromise = realpath(this.cwd);
   }
 
-  async read({ filePath, offset = 1, limit = MAX_LINES }) {
+  async read({
+    filePath,
+    offset = 1,
+    limit = MAX_LINES,
+  }: {
+    filePath: string;
+    offset?: number;
+    limit?: number;
+  }) {
     checkAbort(this.signal);
     const target = await this.existingPath(filePath);
     this.onActivity("Reading a workspace file");
@@ -81,7 +102,7 @@ export class LocalFiles {
     };
   }
 
-  async write({ filePath, content }) {
+  async write({ filePath, content }: { filePath: string; content: string }) {
     checkAbort(this.signal);
     const target = await this.writablePath(filePath);
     this.onActivity("Writing a workspace file");
@@ -94,7 +115,15 @@ export class LocalFiles {
     };
   }
 
-  async edit({ filePath, oldText, newText }) {
+  async edit({
+    filePath,
+    oldText,
+    newText,
+  }: {
+    filePath: string;
+    oldText: string;
+    newText: string;
+  }) {
     checkAbort(this.signal);
     const target = await this.existingPath(filePath);
     this.onActivity("Editing a workspace file");
@@ -128,7 +157,7 @@ export class LocalFiles {
     return { path: this.displayPath(target), replacements: 1 };
   }
 
-  async existingPath(filePath) {
+  async existingPath(filePath: string) {
     const candidate = await this.lexicalPath(filePath);
     const resolved = await realpath(candidate);
     await this.assertInsideRoot(resolved);
@@ -138,7 +167,7 @@ export class LocalFiles {
     return resolved;
   }
 
-  async writablePath(filePath) {
+  async writablePath(filePath: string) {
     const candidate = await this.lexicalPath(filePath);
     if (isSensitivePath(candidate)) {
       throw new Error("Access to credential files is blocked.");
@@ -173,7 +202,7 @@ export class LocalFiles {
     throw new Error("The file path is outside the workspace.");
   }
 
-  lexicalPath(filePath) {
+  lexicalPath(filePath: string) {
     if (typeof filePath !== "string" || !filePath.trim()) {
       throw new Error("A file path is required.");
     }
@@ -189,7 +218,10 @@ export class LocalFiles {
     return candidate;
   }
 
-  async assertInsideRoot(candidate, { allowRoot = false } = {}) {
+  async assertInsideRoot(
+    candidate: string,
+    { allowRoot = false }: { allowRoot?: boolean } = {}
+  ) {
     const root = await this.rootPromise;
     const relative = path.relative(root, candidate);
     if (
@@ -201,7 +233,7 @@ export class LocalFiles {
     }
   }
 
-  displayPath(absolutePath) {
+  displayPath(absolutePath: string) {
     return path.relative(this.cwd, absolutePath) || ".";
   }
 }
