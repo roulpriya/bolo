@@ -31,16 +31,13 @@ export interface Run {
   createdAt: number;
   currentTool: string | null;
   error: string | null;
-  finalScreenshotPath?: string | null;
   finishedAt: number | null;
   id: string;
   input: string;
-  internalStopReason?: string;
   languageCode: string;
   pendingQuestion: PendingQuestion | null;
   progress: string;
   result: string | null;
-  stage?: string;
   state: RunState;
   toolActivity: ToolActivityEntry[];
 }

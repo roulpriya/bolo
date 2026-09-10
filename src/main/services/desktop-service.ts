@@ -12,7 +12,6 @@ import {
 } from "../agent/agent-service.ts";
 import type { PendingQuestion, Run } from "../agent/run.ts";
 import { reminderIntent } from "../intents/reminder-intent.ts";
-import { permissionStatus } from "../platform/mac.ts";
 import { RunHistory } from "../state/run-history.ts";
 import { McpOAuthService } from "./mcp-oauth.ts";
 import type { McpServerInput } from "./mcp-settings.ts";
@@ -190,12 +189,8 @@ export class DesktopService extends EventEmitter {
   }
 
   async health() {
-    const localComputerConfigured = await permissionStatus()
-      .then((status) => status.accessibilityTrusted === true)
-      .catch(() => false);
     return {
       localBrowserConfigured: await this.agent.browserAvailable(),
-      localComputerConfigured,
       ok: true,
       openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
       sarvamConfigured: Boolean(process.env.SARVAM_API_KEY),

@@ -46,6 +46,8 @@ test("exposes Pi-style read, write, edit, and bash tools", async () => {
       assert.ok(names.includes(name), `${name} should be available`);
     }
     assert.ok(!names.includes("shell"));
+    assert.ok(names.includes("computer_use"));
+    assert.ok(names.includes("browser_use"));
   } finally {
     await service.close();
     await rm(profileDirectory, { force: true, recursive: true });

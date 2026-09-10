@@ -7,7 +7,7 @@
 - The preload exposes only fixed Bolo operations. Every main-process IPC
   handler verifies that the sender is Bolo's main renderer and validates the
   payload again in `DesktopService`.
-- Sarvam and OpenAI API keys remain in the main process. Raw microphone audio
+- Sarvam, OpenAI, and Anthropic API keys remain in the main process. Raw microphone audio
   is forwarded only to Sarvam and is not persisted.
 - The local browser has a dedicated Bolo profile. Web content is untrusted and
   cannot directly invoke shell or desktop tools.
@@ -24,12 +24,15 @@ Credentials must be entered by the user directly into the visible application.
 Bolo must never request a password, API key, OTP, or other secret through
 speech, text, or a tool result.
 
-Computer Use is limited to desktop-only work, explicit user requests, or a
-recorded failure of an applicable specialized tool. Provider safety checks
-remain active.
-
 ## Local data
 
 Sanitized run summaries and the managed browser profile live under Electron's
-user-data directory. Screenshots are temporary and normally removed when a
-computer run ends. Stop and application shutdown abort all active tools.
+user-data directory. Stop and application shutdown abort all active tools.
+
+Desktop computer use controls the main host display with the user's macOS
+Accessibility and Screen Recording permissions. Screenshots go to the chosen
+OpenAI or Anthropic API. They are not written to disk or tool history.
+Actions validate their coordinates against the screenshot and reject a changed
+display before input. Consequential actions are governed by the specialist's
+confirmation instructions; OpenAI provider safety checks also require an
+explicit answer before execution. The desktop helper is not an isolated VM.

@@ -53,25 +53,31 @@ The primary OpenAI agent owns Pi-style workspace tools plus its execution tools:
 3. `bash` for local processes, scripts, tests, and commands.
 4. Hosted web search for current information.
 5. A visible Playwright browser specialist for websites and web applications.
-6. Scoped Computer Use for desktop-only work, an explicit user request, or a
-   recorded specialized-tool failure.
+6. A separate native macOS computer specialist with direct OpenAI Responses or
+   Claude Messages API loops.
 
 File tools accept workspace-relative or workspace-contained absolute paths.
 They refuse paths outside the workspace, symlink escapes, and credential files.
 Reads are bounded and line-numbered; edits require exactly one exact match.
 
 The browser uses a persistent profile stored beneath Electron's user-data
-directory. Computer Use retains screenshot cleanup, action bounds, repetition
-protection, and macOS Accessibility checks.
+directory. The desktop specialist does not change that browser path.
+`computer-actions.ts` validates and normalizes provider actions;
+`desktop-computer.ts` executes them through `platform/desktop-control.ts` and
+the Swift ScreenCaptureKit/CoreGraphics helper. OpenAI uses ordered
+`computer_call.actions` and screenshot outputs linked by call ID. Claude uses
+`computer_toolset_20260801` and answers each toolset member in sequence, marking
+the remainder of a failed batch as skipped. Both preserve their conversation,
+return fresh screenshots, honor cancellation, and release held keys/buttons.
+Desktop screenshots stay in memory and are not included in run history.
 
 ## State and shutdown
 
 `DesktopService` owns run state, cancellation controllers, pending questions,
 voice sessions, and sanitized history. Public run states are `running`,
 `waiting_for_user`, `completed`, `failed`, and `cancelled`. Secrets,
-controllers, raw audio, screenshots, and pending promise callbacks are never
+controllers, raw audio, and pending promise callbacks are never
 persisted.
 
 On shutdown, Bolo closes voice and browser sessions, aborts active work,
-rejects pending questions, removes temporary screenshots, and flushes run
-summaries.
+rejects pending questions, and flushes run summaries.
