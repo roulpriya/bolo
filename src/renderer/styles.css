@@ -1,3 +1,5 @@
+@import "./app/components/thread-picker.css";
+@import "./app/components/background-request.css";
 /* Component library styles. Plain (non-module) CSS imported via @import
    rather than a JS `import` in each component file: this stylesheet is
    only ever reached through the static <link> tag in index.html, so Vite

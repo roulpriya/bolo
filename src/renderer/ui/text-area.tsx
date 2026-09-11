@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import {
   TextArea as AriaTextArea,
   type TextAreaProps as AriaTextAreaProps,
@@ -6,13 +7,22 @@ import {
 } from "react-aria-components";
 
 export interface TextAreaProps
-  extends Omit<AriaTextFieldProps, "children" | "className">,
+  extends Omit<
+      AriaTextFieldProps,
+      | "children"
+      | "className"
+      | "onKeyDown"
+      | "placeholder"
+      | "rows"
+      | "spellCheck"
+    >,
     Pick<
       AriaTextAreaProps,
-      "onKeyDown" | "placeholder" | "ref" | "rows" | "spellCheck"
+      "onKeyDown" | "placeholder" | "rows" | "spellCheck"
     > {
   className?: string;
   maxLength?: number;
+  ref?: Ref<HTMLTextAreaElement>;
 }
 
 export function TextArea({

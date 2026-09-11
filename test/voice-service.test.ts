@@ -65,7 +65,10 @@ test("accumulates speech across a brief pause and commits exactly once", async (
     turnCommitDelayMs: 20,
     WebSocketImpl: FakeSocket,
   });
-  const { sessionId } = voice.start({ purpose: "command" });
+  const { sessionId } = voice.start({
+    purpose: "command",
+    threadId: crypto.randomUUID(),
+  });
   voice.sendChunk(sessionId, Buffer.from([1, 2]));
   assert.equal(FakeSocket.instance.sent.length, 0);
   FakeSocket.instance.open();
@@ -144,4 +147,55 @@ test("recognizes all supported Sarvam event shapes", () => {
     }),
     "ta-IN"
   );
+});
+
+test("a failed voice startup does not retain the capture slot", () => {
+  const originalKey = process.env.SARVAM_API_KEY;
+  delete process.env.SARVAM_API_KEY;
+  const voice = new VoiceService({ WebSocketImpl: FakeSocket });
+  try {
+    assert.throws(
+      () => voice.start({ purpose: "command", threadId: crypto.randomUUID() }),
+      /not configured/
+    );
+    assert.equal(voice.session, null);
+    process.env.SARVAM_API_KEY = "sarvam_test";
+    const started = voice.start({
+      purpose: "command",
+      threadId: crypto.randomUUID(),
+    });
+    assert.ok(started.sessionId);
+  } finally {
+    voice.close();
+    if (originalKey === undefined) {
+      delete process.env.SARVAM_API_KEY;
+    } else {
+      process.env.SARVAM_API_KEY = originalKey;
+    }
+  }
+});
+
+test("cancel releases the capture slot before the socket close handshake ends", () => {
+  process.env.SARVAM_API_KEY = "sarvam_test";
+  const voice = new VoiceService({ WebSocketImpl: FakeSocket });
+  try {
+    const first = voice.start({
+      purpose: "command",
+      threadId: crypto.randomUUID(),
+    });
+    const oldSocket = FakeSocket.instance;
+    oldSocket.open();
+    oldSocket.close = () => {
+      oldSocket.readyState = 2;
+    };
+    voice.cancel(first.sessionId);
+    const next = voice.start({
+      purpose: "command",
+      threadId: crypto.randomUUID(),
+    });
+    oldSocket.emit("close");
+    assert.equal(voice.session?.id, next.sessionId);
+  } finally {
+    voice.close();
+  }
 });

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import "../dist/src/config.js";
+import "../src/main/config.ts";
 import crypto from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AgentService } from "../dist/src/agent-service.js";
+import { AgentService } from "../src/main/agent/agent-service.ts";
+import { createTurnRecord } from "../src/shared/threads.ts";
 
 const expectedText = "Bolo browser agent verified";
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -18,10 +19,15 @@ await mkdir(evidenceDirectory, { recursive: true });
 
 const activityLog = [];
 const run = {
+  ...createTurnRecord(
+    crypto.randomUUID(),
+    "Standalone browser specialist test"
+  ),
   abortController: new AbortController(),
   currentTool: null,
   id: `browser-e2e-${crypto.randomUUID()}`,
   input: "Standalone browser specialist test",
+  notify: () => undefined,
   pendingQuestion: null,
   progress: "Starting standalone browser test",
   state: "running",
@@ -134,7 +140,7 @@ try {
     model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
     modelResult,
     passed: domEvidence.passed && modelResult?.status === "verified",
-    runId: run.id,
+    turnId: run.id,
   };
 } catch (error) {
   const livePage = await agentService.browser.newPage().catch(() => null);
@@ -150,7 +156,7 @@ try {
     evidenceDirectory,
     model: process.env.OPENAI_COMPUTER_MODEL || "gpt-5.6",
     passed: false,
-    runId: run.id,
+    turnId: run.id,
   };
 } finally {
   await writeFile(

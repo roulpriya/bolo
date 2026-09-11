@@ -48,9 +48,18 @@ values to the agent.
 ## Architecture
 
 The renderer has no Node access and communicates only through a validated
-preload IPC bridge. `DesktopService` in the main process owns voice sessions,
-agent runs, tools, secrets, cancellation, and sanitized history. There is no
-local HTTP server.
+preload IPC bridge. `DesktopService` connects the renderer to thread storage, turn coordination,
+voice sessions, and application integrations. Threads persist ordered turns and
+model context; runtime sessions manage active execution and cancellation. Use
+Conversations to reopen a thread and New conversation to start another one.
+Quitting and relaunching opens a blank conversation; hiding/showing or reloading
+the window preserves the current one. A new conversation leaves existing work
+running, with controls to open or stop it. You can draft while it runs, but Bolo
+accepts only one unfinished request at a time and has no queue. There is no local
+HTTP server.
+
+Enabled MCP servers connect on demand when the agent loads an integration's tools,
+rather than before every request. Existing healthy connections are reused.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [SECURITY.md](SECURITY.md).
 

@@ -1,0 +1,33 @@
+.background-request {
+  align-self: center;
+  width: min(100%, 740px);
+  padding: 12px 16px;
+  margin-top: 8px;
+  color: var(--text);
+  background: var(--bg);
+  border-radius: 12px;
+}
+.background-request p {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.background-request p span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.background-request strong {
+  flex-shrink: 0;
+}
+.background-request-actions {
+  display: flex;
+  gap: 12px;
+  margin: 4px 0;
+}
+.background-request small {
+  font-size: 12px;
+  color: var(--muted);
+}

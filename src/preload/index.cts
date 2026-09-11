@@ -2,21 +2,21 @@ import { contextBridge, ipcRenderer } from "electron";
 import { IPC } from "../shared/ipc.ts";
 
 const boloDesktop: Window["boloDesktop"] = {
-  answerRun: (runId, questionId, text) =>
-    ipcRenderer.invoke(IPC.answerRun, runId, questionId, text),
-  cancelVoice: (sessionId) => ipcRenderer.invoke(IPC.cancelVoice, sessionId),
+  answerQuestion: (input) => ipcRenderer.invoke(IPC.answerQuestion, input),
+  cancelTurn: (threadId, turnId) =>
+    ipcRenderer.invoke(IPC.cancelTurn, threadId, turnId),
+  cancelVoiceSession: (sessionId) =>
+    ipcRenderer.invoke(IPC.cancelVoiceSession, sessionId),
+  createThread: () => ipcRenderer.invoke(IPC.createThread),
   getMcpServers: () => ipcRenderer.invoke(IPC.mcpServersGet),
-  getRun: (id) => ipcRenderer.invoke(IPC.getRun, id),
+  getThread: (id) => ipcRenderer.invoke(IPC.getThread, id),
+  getTurn: (threadId, turnId) =>
+    ipcRenderer.invoke(IPC.getTurn, threadId, turnId),
   health: () => ipcRenderer.invoke(IPC.health),
   hideWindow() {
     ipcRenderer.send(IPC.hideWindow);
   },
-  onAgentText(callback) {
-    const listener = (_event: unknown, agentText: unknown) =>
-      callback(agentText);
-    ipcRenderer.on(IPC.agentText, listener);
-    return () => ipcRenderer.removeListener(IPC.agentText, listener);
-  },
+  listThreads: () => ipcRenderer.invoke(IPC.listThreads),
   onFocusCommand(callback) {
     const listener = () => callback();
     ipcRenderer.on(IPC.focusCommand, listener);
@@ -35,14 +35,26 @@ const boloDesktop: Window["boloDesktop"] = {
     ipcRenderer.on(IPC.newCommand, listener);
     return () => ipcRenderer.removeListener(IPC.newCommand, listener);
   },
+  onThreadEvent(callback) {
+    const listener = (
+      _event: unknown,
+      threadEvent: Parameters<typeof callback>[0]
+    ) => callback(threadEvent);
+    ipcRenderer.on(IPC.threadEvent, listener);
+    return () => ipcRenderer.removeListener(IPC.threadEvent, listener);
+  },
   onVoiceEvent(callback) {
-    const listener = (_event: unknown, voiceEvent: unknown) =>
-      callback(voiceEvent);
+    const listener = (
+      _event: unknown,
+      voiceEvent: Parameters<typeof callback>[0]
+    ) => callback(voiceEvent);
     ipcRenderer.on(IPC.voiceEvent, listener);
     return () => ipcRenderer.removeListener(IPC.voiceEvent, listener);
   },
   openSettings: () => ipcRenderer.invoke(IPC.settingsOpen),
+  restoreThread: (options) => ipcRenderer.invoke(IPC.restoreThread, options),
   saveMcpServers: (servers) => ipcRenderer.invoke(IPC.mcpServersSave, servers),
+  selectThread: (id) => ipcRenderer.invoke(IPC.selectThread, id),
   sendVoiceChunk: (sessionId, bytes) =>
     ipcRenderer.send(IPC.voiceChunk, sessionId, bytes),
   setExpanded(expanded) {
@@ -53,10 +65,10 @@ const boloDesktop: Window["boloDesktop"] = {
   },
   speech: (text, languageCode) =>
     ipcRenderer.invoke(IPC.speech, text, languageCode),
-  startAgent: (text) => ipcRenderer.invoke(IPC.startAgent, text),
   startMcpOAuth: (id) => ipcRenderer.invoke(IPC.mcpOAuthStart, id),
-  startVoice: (options) => ipcRenderer.invoke(IPC.startVoice, options),
-  stopRun: (id) => ipcRenderer.invoke(IPC.stopRun, id),
+  startTurn: (input) => ipcRenderer.invoke(IPC.startTurn, input),
+  startVoiceSession: (options) =>
+    ipcRenderer.invoke(IPC.startVoiceSession, options),
 };
 
 contextBridge.exposeInMainWorld("boloDesktop", boloDesktop);

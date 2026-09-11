@@ -51,12 +51,12 @@ export function Button({
   ]
     .filter(Boolean)
     .join(" ");
+  const buttonProps = { ...props, title };
   return (
     <AriaButton
       className={classes || undefined}
       hidden={hidden}
-      title={title}
-      {...props}
+      {...buttonProps}
     >
       {children}
     </AriaButton>

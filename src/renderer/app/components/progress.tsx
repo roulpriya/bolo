@@ -11,8 +11,12 @@ import {
 import { Fragment, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  isTerminalTurn,
+  type ToolActivityEntry,
+  type Turn,
+} from "../../../shared/threads.ts";
 import { Disclosure } from "../../ui/disclosure";
-import type { Run, ToolActivity } from "../types";
 
 interface TerminalResult {
   outcome?: { exitCode?: number | null; type?: string };
@@ -20,7 +24,7 @@ interface TerminalResult {
   stdout?: string;
 }
 
-function terminalResults(output?: string): TerminalResult[] | null {
+function terminalResults(output?: string | null): TerminalResult[] | null {
   if (!output) {
     return null;
   }
@@ -72,7 +76,7 @@ function TerminalPanel({
   state,
 }: {
   command: string;
-  output?: string;
+  output?: string | null;
   state: string;
 }) {
   const results = terminalResults(output);
@@ -121,7 +125,7 @@ function ToolContent({
 }: {
   command: string;
   isBash: boolean;
-  item: ToolActivity;
+  item: ToolActivityEntry;
   state: string;
 }) {
   if (isBash) {
@@ -172,7 +176,11 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
 };
 const FILE_REF_TOOLS = new Set(["edit", "read", "write"]);
 
-function ToolCall({ item }: { item: ToolActivity & { kind: "tool_call" } }) {
+function ToolCall({
+  item,
+}: {
+  item: ToolActivityEntry & { kind: "tool_call" };
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const state = item.status || "running";
   const isBash = item.tool === "bash";
@@ -237,20 +245,24 @@ function ToolCall({ item }: { item: ToolActivity & { kind: "tool_call" } }) {
   );
 }
 
-export function Progress({ run }: { run: Run | null }) {
+export function Progress({ turn }: { turn: Turn | null }) {
+  const finished = Boolean(turn && isTerminalTurn(turn.state));
   const [isCompleteOpen, setIsCompleteOpen] = useState(true);
   useEffect(() => {
-    if (run?.finished) {
+    if (finished) {
       setIsCompleteOpen(false);
     }
-  }, [run?.finished]);
+  }, [finished]);
   const progressLabel =
-    run?.progress === "Starting agent" ? "Working" : run?.progress || "Working";
+    turn?.progress === "Starting agent"
+      ? "Working"
+      : turn?.progress || "Working";
   const summaryRow = <span className="progress-summary">{progressLabel}</span>;
-  const toolCalls = run?.toolActivity?.filter(
-    (item): item is ToolActivity & { kind: "tool_call" } =>
-      item.kind === "tool_call"
-  );
+  const toolCalls =
+    turn?.toolActivity.filter(
+      (item): item is ToolActivityEntry & { kind: "tool_call" } =>
+        item.kind === "tool_call"
+    ) ?? [];
   const toolTimeline = Boolean(toolCalls.length) && (
     <section aria-label="Tool calls" className="tool-timeline">
       {toolCalls.map((item) => (
@@ -258,8 +270,8 @@ export function Progress({ run }: { run: Run | null }) {
       ))}
     </section>
   );
-  if (run?.finished) {
-    const response = run.response || run.result;
+  if (finished && turn) {
+    const response = turn.response || turn.result;
     return (
       <div className="progress-card progress-complete">
         {toolTimeline ? (
@@ -275,7 +287,7 @@ export function Progress({ run }: { run: Run | null }) {
         ) : (
           <div className="progress-row progress-row-muted">{summaryRow}</div>
         )}
-        {Boolean(response) && <AgentResponse>{response}</AgentResponse>}
+        {response ? <AgentResponse>{response}</AgentResponse> : null}
       </div>
     );
   }
@@ -283,6 +295,7 @@ export function Progress({ run }: { run: Run | null }) {
     <div className="progress-card">
       <div className="progress-row progress-row-muted">{summaryRow}</div>
       {toolTimeline}
+      {turn?.response ? <AgentResponse>{turn.response}</AgentResponse> : null}
     </div>
   );
 }

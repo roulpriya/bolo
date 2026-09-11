@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "vitest";
+import { RunContext } from "@openai/agents";
+import { test, vi } from "vitest";
 import {
   AgentService,
   buildBoloInstructions,
@@ -10,23 +11,18 @@ import {
   recordToolEnd,
   recordToolStart,
 } from "../src/main/agent/agent-service.ts";
-import type { Run, ToolActivityEntry } from "../src/main/agent/run.ts";
+import { LocalShell } from "../src/main/agent/local-shell.ts";
+import type { TurnExecution } from "../src/main/agent/turn-execution.ts";
+import {
+  createTurnRecord,
+  type ToolActivityEntry,
+} from "../src/shared/threads.ts";
 
-function fakeRun(overrides: Partial<Run> = {}): Run {
+function fakeRun(overrides: Partial<TurnExecution> = {}): TurnExecution {
   return {
+    ...createTurnRecord(crypto.randomUUID(), "Test input"),
     abortController: new AbortController(),
-    createdAt: Date.now(),
-    currentTool: null,
-    error: null,
-    finishedAt: null,
-    id: "test",
-    input: "",
-    languageCode: "en-IN",
-    pendingQuestion: null,
-    progress: "",
-    result: null,
-    state: "running",
-    toolActivity: [],
+    notify: () => undefined,
     ...overrides,
   };
 }
@@ -117,4 +113,52 @@ test("does not expose answers returned from the question tool", () => {
   recordToolStart(run, { name: "ask_user_question" }, call);
   recordToolEnd(run, { name: "ask_user_question" }, "a private answer", call);
   assert.equal(run.toolActivity[0].output, "Response received.");
+});
+
+test("bash accepts seconds and legacy millisecond timeouts through SDK validation", async () => {
+  const service = new AgentService({
+    browserProfileDirectory: process.cwd(),
+    workspaceDirectory: process.cwd(),
+  });
+  const command = vi.spyOn(LocalShell.prototype, "run").mockResolvedValue({
+    maxOutputLength: 100,
+    output: [
+      { outcome: { exitCode: 0, type: "exit" }, stderr: "", stdout: "ok" },
+    ],
+  });
+  try {
+    const bash = service
+      .createTools(fakeRun(), async () => "no")
+      .find((tool) => tool.name === "bash");
+    assert.ok(bash?.type === "function");
+    await bash.invoke(
+      new RunContext(),
+      JSON.stringify({ command: "vm_stat", timeout: 120_000 })
+    );
+    assert.deepEqual(command.mock.calls[0][0], {
+      commands: ["vm_stat"],
+      timeoutMs: 120_000,
+    });
+    await bash.invoke(
+      new RunContext(),
+      JSON.stringify({ command: "vm_stat", timeout: 120 })
+    );
+    assert.equal(command.mock.calls[1][0].timeoutMs, 120_000);
+    await bash.invoke(
+      new RunContext(),
+      JSON.stringify({ command: "vm_stat", timeout: 30 })
+    );
+    assert.equal(command.mock.calls[2][0].timeoutMs, 30_000);
+    await bash.invoke(new RunContext(), JSON.stringify({ command: "vm_stat" }));
+    assert.equal(command.mock.calls[3][0].timeoutMs, undefined);
+    const invalid = await bash.invoke(
+      new RunContext(),
+      JSON.stringify({ command: "vm_stat", timeout: 120_001 })
+    );
+    assert.match(String(invalid), /InvalidToolInputError/);
+    assert.equal(command.mock.calls.length, 4);
+  } finally {
+    command.mockRestore();
+    await service.close();
+  }
 });

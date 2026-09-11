@@ -1,125 +1,116 @@
-import type { VoiceStartOptions } from "../shared/ipc.ts";
-import type { Run, ToolActivity } from "./app/types";
-
-interface VoiceEvent {
-  error?: string;
-  runId?: string;
-  sessionId: string;
-  transcript?: string;
-  type:
-    | "ready"
-    | "speech-start"
-    | "speech-end"
-    | "translated"
-    | "failed"
-    | "closed";
-}
+import {
+  createTurnRecord,
+  isTerminalTurn,
+  summarizeThread,
+  type Thread,
+  type ThreadEvent,
+} from "../shared/threads.ts";
 
 const PREVIEW_NOTICE =
-  "Browser preview shim — connect the Bolo desktop app for real agent runs.";
+  "Browser preview — connect the Bolo desktop app for real agent execution.";
 
-const runs = new Map<string, Run>();
-const voiceListeners = new Set<(event: VoiceEvent) => void>();
-let runCounter = 0;
-
-function emitVoice(event: VoiceEvent) {
-  for (const listener of voiceListeners) {
-    listener(event);
-  }
+function request<T>(operation: () => T): Promise<T> {
+  return Promise.resolve().then(operation);
 }
 
-function sampleToolActivity(): ToolActivity[] {
-  return [
-    {
-      detail: "",
-      id: "t1",
-      input: JSON.stringify({ path: "agent-service.ts" }),
-      kind: "tool_call",
-      status: "completed",
-      tool: "read",
-    },
-    {
-      detail: "",
-      id: "t2",
-      input: JSON.stringify({
-        command:
-          "sed -n '240,335p' node_modules/@openai/agents-core/dist/mcp.d.ts",
-      }),
-      kind: "tool_call",
-      output: "1: interface McpServer {\n2:   name: string;\n...",
-      status: "completed",
-      tool: "bash",
-    },
-    {
-      detail: "",
-      id: "t3",
-      input: JSON.stringify({ path: "logger.d.ts" }),
-      kind: "tool_call",
-      output: "ENOENT: no such file or directory",
-      status: "failed",
-      tool: "write",
-    },
-    {
-      detail: "",
-      id: "t4",
-      input: JSON.stringify({ command: "npm run test:browser-agent" }),
-      kind: "tool_call",
-      status: "running",
-      tool: "bash",
-    },
-  ];
-}
-
-/**
- * Installs a mock `window.boloDesktop` when the renderer is opened in a
- * plain browser tab (e.g. the Vite dev server) instead of inside Electron,
- * where the preload script never runs. Dev/preview only.
- */
+/** In-memory preview uses the same thread contract as the Electron bridge. */
 export function installBrowserShimIfNeeded() {
   if (window.boloDesktop) {
     return;
   }
-  console.info(
-    "[bolo] No Electron preload detected — installing browser preview shim."
-  );
+  const threads = new Map<string, Thread>();
+  let selectedThreadId: string | null = null;
+  const listeners = new Set<(event: ThreadEvent) => void>();
+  const get = (id: string) => {
+    const thread = threads.get(id);
+    if (!thread) {
+      throw new Error("Thread not found.");
+    }
+    return thread;
+  };
+  const create = () => {
+    const now = Date.now();
+    const thread: Thread = {
+      createdAt: now,
+      id: crypto.randomUUID(),
+      revision: 0,
+      title: "New conversation",
+      turns: [],
+      updatedAt: now,
+    };
+    threads.set(thread.id, thread);
+    selectedThreadId = thread.id;
+    return structuredClone(thread);
+  };
+  const emit = (thread: Thread, turnId: string) => {
+    thread.revision += 1;
+    thread.updatedAt = Date.now();
+    const event: ThreadEvent = {
+      revision: thread.revision,
+      thread: structuredClone(thread),
+      threadId: thread.id,
+      turnId,
+      type: "thread.updated",
+    };
+    for (const listener of listeners) {
+      listener(event);
+    }
+  };
   window.boloDesktop = {
-    answerRun: (runId, _questionId, text) => {
-      const run = runs.get(runId);
-      if (run) {
-        run.pendingQuestion = null;
-        setTimeout(() => {
-          run.state = "completed";
-          run.finished = true;
-          run.finishedAt = Date.now();
-          run.result = `Got it — you said "${text}". ${PREVIEW_NOTICE}`;
-        }, 600);
-      }
-      return Promise.resolve({ ok: true });
-    },
-    cancelVoice: () => Promise.resolve({ ok: true }),
-    getMcpServers: () => Promise.resolve([]),
-    getRun: (id) => {
-      const run = runs.get(id);
-      if (!run) {
-        return Promise.reject(new Error("Unknown preview run."));
-      }
-      return Promise.resolve(run);
-    },
-    health: () => Promise.resolve({ ok: true, shim: true }),
+    answerQuestion: () =>
+      Promise.reject(new Error("No question is waiting in this preview.")),
+    cancelTurn: (threadId, turnId) =>
+      request(() => {
+        const thread = get(threadId);
+        const turn = thread.turns.find((item) => item.id === turnId);
+        if (!turn) {
+          throw new Error("Turn not found.");
+        }
+        if (!isTerminalTurn(turn.state)) {
+          turn.state = "cancelled";
+          turn.progress = "Stopped";
+          turn.finishedAt = Date.now();
+          emit(thread, turn.id);
+        }
+        return { ok: true };
+      }),
+    cancelVoiceSession: async () => ({ ok: true }),
+    createThread: async () => create(),
+    getMcpServers: async () => [],
+    getThread: async (id) => structuredClone(get(id)),
+    getTurn: (threadId, turnId) =>
+      request(() => {
+        const turn = get(threadId).turns.find((item) => item.id === turnId);
+        if (!turn) {
+          throw new Error("Turn not found.");
+        }
+        return structuredClone(turn);
+      }),
+    health: async () => ({ ok: true }),
     hideWindow: () => undefined,
-    onAgentText: () => () => undefined,
+    listThreads: async () => [...threads.values()].map(summarizeThread),
     onFocusCommand: () => () => undefined,
     onMcpOAuthEvent: () => () => undefined,
     onNewCommand: () => () => undefined,
-    onVoiceEvent: (callback) => {
-      voiceListeners.add(callback);
-      return () => voiceListeners.delete(callback);
+    onThreadEvent: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
-    openSettings: () => {
-      window.open("../settings/index.html", "_blank", "noopener");
-      return Promise.resolve({ ok: true });
-    },
-    saveMcpServers: (servers) => Promise.resolve(servers),
+    onVoiceEvent: () => () => undefined,
+    openSettings: () =>
+      request(() => {
+        window.open("../settings/index.html", "_blank", "noopener");
+        return { ok: true };
+      }),
+    restoreThread: async () =>
+      selectedThreadId ? structuredClone(get(selectedThreadId)) : create(),
+    saveMcpServers: async (servers) => servers,
+    selectThread: (id) =>
+      request(() => {
+        const thread = get(id);
+        selectedThreadId = id;
+        return structuredClone(thread);
+      }),
     sendVoiceChunk: () => undefined,
     setExpanded: () => undefined,
     setIgnoreMouseEvents: () => undefined,
@@ -127,52 +118,43 @@ export function installBrowserShimIfNeeded() {
       Promise.reject(
         new Error("Speech playback is unavailable in the browser preview.")
       ),
-    startAgent: (text) => {
-      runCounter += 1;
-      const id = `preview-${runCounter}`;
-      const toolActivity = sampleToolActivity();
-      const run: Run = {
-        createdAt: Date.now(),
-        progress: "Working",
-        state: "running",
-        toolActivity,
-      };
-      runs.set(id, run);
-      setTimeout(() => {
-        run.state = "completed";
-        run.finished = true;
-        run.finishedAt = Date.now();
-        run.result = `You said: "${text}". ${PREVIEW_NOTICE}`;
-        for (const activity of toolActivity) {
-          if (activity.status === "running") {
-            activity.status = "completed";
-            activity.output = "ok";
-          }
+    startMcpOAuth: async () => ({ status: "pending" }),
+    startTurn: ({ threadId, text }) =>
+      request(() => {
+        if (
+          [...threads.values()].some((item) =>
+            item.turns.some((candidate) => !isTerminalTurn(candidate.state))
+          )
+        ) {
+          throw new Error("A turn is already running.");
         }
-      }, 900);
-      return Promise.resolve({ id });
-    },
-    startMcpOAuth: () => Promise.resolve({ status: "pending" }),
-    startVoice: (_options: VoiceStartOptions) => {
-      const sessionId = `preview-voice-${Date.now()}`;
-      setTimeout(
-        () =>
-          emitVoice({
-            error: "Voice input is unavailable in the browser preview.",
-            sessionId,
-            type: "failed",
-          }),
-        300
-      );
-      return Promise.resolve({ sessionId });
-    },
-    stopRun: (id) => {
-      const run = runs.get(id);
-      if (run) {
-        run.state = "cancelled";
-        run.finished = true;
-      }
-      return Promise.resolve({ ok: true });
-    },
+        const thread = get(threadId);
+        const turn = createTurnRecord(threadId, text);
+        thread.turns.push(turn);
+        thread.title = thread.turns[0]?.input.slice(0, 80) ?? thread.title;
+        emit(thread, turn.id);
+        setTimeout(() => {
+          if (isTerminalTurn(turn.state)) {
+            return;
+          }
+          turn.state = "completed";
+          turn.finishedAt = Date.now();
+          turn.progress = "Complete";
+          turn.result = `You said: "${text}". ${PREVIEW_NOTICE}`;
+          turn.response = turn.result;
+          turn.messages.push({
+            id: crypto.randomUUID(),
+            kind: "result",
+            role: "assistant",
+            text: turn.result,
+          });
+          emit(thread, turn.id);
+        }, 600);
+        return { threadId, turnId: turn.id };
+      }),
+    startVoiceSession: () =>
+      Promise.reject(
+        new Error("Voice input is unavailable in the browser preview.")
+      ),
   };
 }

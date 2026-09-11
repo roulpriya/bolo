@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import type { VoiceStartOptions } from "../../shared/ipc.ts";
+import type { VoiceEvent } from "../../shared/sessions.ts";
 
 interface SocketLike extends EventEmitter {
   close: (code?: number, reason?: string) => void;
@@ -20,7 +21,7 @@ type SocketImplCtor = {
   OPEN: number;
 };
 
-interface Session extends VoiceStartOptions {
+type VoiceSession = VoiceStartOptions & {
   audioBytes: number;
   closed: boolean;
   commitTimer: NodeJS.Timeout | null;
@@ -33,7 +34,7 @@ interface Session extends VoiceStartOptions {
   socket: SocketLike | null;
   timers: Set<NodeJS.Timeout>;
   transcripts: string[];
-}
+};
 
 const SARVAM_STREAM_URL = "wss://api.sarvam.ai/speech-to-text/ws";
 const START_SPEECH_TIMEOUT_MS = 15_000;
@@ -104,20 +105,18 @@ function detectedLanguage(message) {
   ).trim();
 }
 
-type VoiceEvent = { sessionId: string; type: string } & Record<string, unknown>;
-
 export class VoiceService {
   WebSocketImpl: SocketImplCtor;
   onEvent: (event: VoiceEvent) => void;
   onTranslation: (
-    session: Session,
+    session: VoiceSession,
     transcript: string,
     languageCode: string
   ) => void | Promise<void>;
   startSpeechTimeoutMs: number;
   maxTurnMs: number;
   turnCommitDelayMs: number;
-  session: Session | null;
+  session: VoiceSession | null;
 
   constructor({
     WebSocketImpl = WebSocket as unknown as SocketImplCtor,
@@ -130,7 +129,7 @@ export class VoiceService {
     WebSocketImpl?: SocketImplCtor;
     onEvent?: (event: VoiceEvent) => void;
     onTranslation?: (
-      session: Session,
+      session: VoiceSession,
       transcript: string,
       languageCode: string
     ) => void | Promise<void>;
@@ -151,7 +150,7 @@ export class VoiceService {
     if (this.session) {
       throw new Error("A microphone session is already active.");
     }
-    const session: Session = {
+    const session: VoiceSession = {
       id: crypto.randomUUID(),
       ...options,
       audioBytes: 0,
@@ -166,11 +165,10 @@ export class VoiceService {
       timers: new Set(),
       transcripts: [],
     };
-    this.session = session;
-
     const socket = new this.WebSocketImpl(streamUrl(), {
       headers: { "Api-Subscription-Key": apiKey() },
     });
+    this.session = session;
     session.socket = socket;
     socket.on("open", () => {
       if (!this.isActive(session.id)) {
@@ -197,7 +195,7 @@ export class VoiceService {
     return { sessionId: session.id };
   }
 
-  addTimer(session: Session, delay: number, callback: () => void) {
+  addTimer(session: VoiceSession, delay: number, callback: () => void) {
     const timer = setTimeout(() => {
       session.timers.delete(timer);
       callback();
@@ -206,7 +204,7 @@ export class VoiceService {
     return timer;
   }
 
-  clearCommitTimer(session: Session) {
+  clearCommitTimer(session: VoiceSession) {
     if (!session.commitTimer) {
       return;
     }
@@ -215,7 +213,7 @@ export class VoiceService {
     session.commitTimer = null;
   }
 
-  scheduleCommit(session: Session) {
+  scheduleCommit(session: VoiceSession) {
     if (
       session.inSpeech ||
       !session.transcripts.length ||
@@ -231,7 +229,7 @@ export class VoiceService {
     });
   }
 
-  commitTranslation(session: Session) {
+  commitTranslation(session: VoiceSession) {
     if (
       !this.isActive(session.id) ||
       session.committed ||
@@ -276,7 +274,7 @@ export class VoiceService {
     this.sendAudio(session, bytes);
   }
 
-  sendAudio(session: Session, bytes: Buffer) {
+  sendAudio(session: VoiceSession, bytes: Buffer) {
     session.socket?.send(
       JSON.stringify({
         audio: {
@@ -288,7 +286,7 @@ export class VoiceService {
     );
   }
 
-  receive(session: Session, raw: { toString: () => string }) {
+  receive(session: VoiceSession, raw: { toString: () => string }) {
     if (!this.isActive(session.id) || session.committed) {
       return;
     }
@@ -324,11 +322,20 @@ export class VoiceService {
     this.scheduleCommit(session);
   }
 
-  emit(session: Session, type: string, extra: Record<string, unknown> = {}) {
-    this.onEvent({ sessionId: session.id, type, ...extra });
+  emit(
+    session: VoiceSession,
+    type: VoiceEvent["type"],
+    extra: Partial<VoiceEvent> = {}
+  ) {
+    this.onEvent({
+      sessionId: session.id,
+      threadId: session.threadId,
+      type,
+      ...extra,
+    });
   }
 
-  fail(session: Session, error: unknown) {
+  fail(session: VoiceSession, error: unknown) {
     if (!this.isActive(session.id) || session.committed) {
       return;
     }
@@ -348,17 +355,17 @@ export class VoiceService {
     this.closeSocket(session);
   }
 
-  closeSocket(session: Session) {
+  closeSocket(session: VoiceSession) {
     const { socket } = session;
     if (socket?.readyState === this.WebSocketImpl.OPEN) {
       socket.close(1000, "complete");
     } else {
       socket?.terminate?.();
-      this.finishClose(session);
     }
+    this.finishClose(session);
   }
 
-  finishClose(session: Session) {
+  finishClose(session: VoiceSession) {
     if (session.closed) {
       return;
     }

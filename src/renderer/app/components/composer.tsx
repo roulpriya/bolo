@@ -5,6 +5,7 @@ import { TextArea } from "../../ui/text-area";
 
 export function Composer({
   canAnswer,
+  canEdit,
   canInput,
   input,
   inputRef,
@@ -17,6 +18,7 @@ export function Composer({
   showStop,
 }: {
   canAnswer: boolean;
+  canEdit: boolean;
   canInput: boolean;
   input: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -35,7 +37,7 @@ export function Composer({
       </span>
       <TextArea
         aria-label="Task or answer"
-        isDisabled={!canInput}
+        isDisabled={!canEdit}
         maxLength={4000}
         onChange={onChange}
         onKeyDown={onKeyDown}
@@ -77,7 +79,8 @@ export function Composer({
       ) : null}
       <Button
         aria-label={canAnswer ? "Send answer" : "Run task"}
-        hidden={!(input.trim() && canInput)}
+        hidden={!input.trim()}
+        isDisabled={!canInput}
         type="submit"
         variant="send"
       >

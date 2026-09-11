@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import {
   TextField as AriaTextField,
   type TextFieldProps as AriaTextFieldProps,
@@ -6,14 +7,23 @@ import {
 } from "react-aria-components";
 
 export interface TextFieldProps
-  extends Omit<AriaTextFieldProps, "children" | "className">,
+  extends Omit<
+      AriaTextFieldProps,
+      | "children"
+      | "className"
+      | "autoComplete"
+      | "autoFocus"
+      | "maxLength"
+      | "placeholder"
+      | "spellCheck"
+      | "type"
+    >,
     Pick<
       InputProps,
       | "autoComplete"
       | "autoFocus"
       | "maxLength"
       | "placeholder"
-      | "ref"
       | "spellCheck"
       | "type"
     > {
@@ -21,6 +31,7 @@ export interface TextFieldProps
   bare?: boolean;
   className?: string;
   monospace?: boolean;
+  ref?: Ref<HTMLInputElement>;
   size?: "sm" | "md" | "lg";
   weight?: "regular" | "bold";
 }

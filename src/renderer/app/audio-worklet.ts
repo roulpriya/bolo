@@ -8,7 +8,7 @@ declare class AudioWorkletProcessor {
 }
 
 class BoloPcmProcessor extends AudioWorkletProcessor {
-  pending = [];
+  pending: number[] = [];
   sourceChunkSize = Math.max(1, Math.round(sampleRate / 10));
 
   process(inputs) {

@@ -1,29 +1,35 @@
 import { z } from "zod";
+import { entityId, legacyChatSchema } from "./threads.ts";
 
 /**
  * The single renderer-to-main contract. Keep Electron's string channels and
  * runtime validation together so the preload bridge cannot silently drift.
  */
 export const IPC = {
-  agentText: "bolo:agent-text",
-  answerRun: "bolo:answer-run",
-  cancelVoice: "bolo:cancel-voice",
+  answerQuestion: "bolo:answer-question",
+  cancelTurn: "bolo:cancel-turn",
+  cancelVoiceSession: "bolo:cancel-voice-session",
+  createThread: "bolo:create-thread",
   focusCommand: "focus-command",
-  getRun: "bolo:get-run",
+  getThread: "bolo:get-thread",
+  getTurn: "bolo:get-turn",
   health: "bolo:health",
   hideWindow: "hide-window",
+  listThreads: "bolo:list-threads",
   mcpOAuthEvent: "bolo:mcp-oauth-event",
   mcpOAuthStart: "bolo:mcp-oauth-start",
   mcpServersGet: "bolo:mcp-servers-get",
   mcpServersSave: "bolo:mcp-servers-save",
   newCommand: "new-command",
+  restoreThread: "bolo:restore-thread",
+  selectThread: "bolo:select-thread",
   setExpanded: "set-expanded",
   setIgnoreMouseEvents: "bolo:set-ignore-mouse-events",
   settingsOpen: "bolo:settings-open",
   speech: "bolo:speech",
-  startAgent: "bolo:start-agent",
-  startVoice: "bolo:start-voice",
-  stopRun: "bolo:stop-run",
+  startTurn: "bolo:start-turn",
+  startVoiceSession: "bolo:start-voice-session",
+  threadEvent: "bolo:thread-event",
   voiceChunk: "bolo:voice-chunk",
   voiceEvent: "bolo:voice-event",
 } as const;
@@ -62,12 +68,34 @@ const mcpServer = z
   .strict();
 
 export const ipcArgs = {
-  answerRun: z.tuple([id, id, z.string().trim().min(1).max(2000)]),
-  cancelVoice: z.tuple([id]),
-  getRun: z.tuple([id]),
+  answerQuestion: z.tuple([
+    z
+      .object({
+        questionId: entityId,
+        text: z.string().trim().min(1).max(2000),
+        threadId: entityId,
+        turnId: entityId,
+      })
+      .strict(),
+  ]),
+  cancelTurn: z.tuple([entityId, entityId]),
+  cancelVoiceSession: z.tuple([id]),
+  createThread: z.tuple([]),
+  getThread: z.tuple([entityId]),
+  getTurn: z.tuple([entityId, entityId]),
+  listThreads: z.tuple([]),
   mcpOAuthStart: z.tuple([id]),
   mcpServersGet: z.tuple([]),
   mcpServersSave: z.tuple([z.array(mcpServer).max(20)]),
+  restoreThread: z.tuple([
+    z
+      .object({
+        legacyChat: legacyChatSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  ]),
+  selectThread: z.tuple([entityId]),
   setExpanded: z.tuple([z.boolean()]),
   setIgnoreMouseEvents: z.tuple([z.boolean()]),
   settingsOpen: z.tuple([]),
@@ -75,19 +103,25 @@ export const ipcArgs = {
     z.string().trim().min(1).max(600),
     z.string().trim().min(1).max(30).optional(),
   ]),
-  startAgent: z.tuple([text]),
-  startVoice: z.tuple([
-    z
-      .object({
-        purpose: z.enum(["command", "answer"]),
-        questionId: id.optional(),
-        runId: id.optional(),
-      })
-      .strict(),
+  startTurn: z.tuple([z.object({ text, threadId: entityId }).strict()]),
+  startVoiceSession: z.tuple([
+    z.discriminatedUnion("purpose", [
+      z.object({ purpose: z.literal("command"), threadId: entityId }).strict(),
+      z
+        .object({
+          purpose: z.literal("answer"),
+          questionId: entityId,
+          threadId: entityId,
+          turnId: entityId,
+        })
+        .strict(),
+    ]),
   ]),
-  stopRun: z.tuple([id]),
   voiceChunk: z.tuple([id, z.instanceof(ArrayBuffer)]),
 } as const;
 
-export type VoiceStartOptions = z.infer<typeof ipcArgs.startVoice>[0];
+export type VoiceStartOptions = z.infer<typeof ipcArgs.startVoiceSession>[0];
 export type McpServerInput = z.infer<typeof mcpServer>;
+
+export type StartTurnInput = z.infer<typeof ipcArgs.startTurn>[0];
+export type AnswerQuestionInput = z.infer<typeof ipcArgs.answerQuestion>[0];

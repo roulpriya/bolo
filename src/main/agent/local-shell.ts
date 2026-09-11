@@ -8,7 +8,7 @@ interface CommandResult {
 
 const MAX_COMMANDS = 8;
 const DEFAULT_TIMEOUT_MS = 30_000;
-const MAX_TIMEOUT_MS = 120_000;
+export const MAX_SHELL_TIMEOUT_MS = 120_000;
 const DEFAULT_OUTPUT_LENGTH = 64_000;
 const MAX_OUTPUT_LENGTH = 256_000;
 const SENSITIVE_ENVIRONMENT_PATTERN =
@@ -97,7 +97,7 @@ export class LocalShell {
     const timeoutMs = bounded(
       action.timeoutMs,
       DEFAULT_TIMEOUT_MS,
-      MAX_TIMEOUT_MS
+      MAX_SHELL_TIMEOUT_MS
     );
     const maxOutputLength = bounded(
       action.maxOutputLength,

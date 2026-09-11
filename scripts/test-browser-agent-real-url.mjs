@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import "../dist/src/config.js";
+import "../src/main/config.ts";
 import crypto from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AgentService } from "../dist/src/agent-service.js";
+import { AgentService } from "../src/main/agent/agent-service.ts";
+import { createTurnRecord } from "../src/shared/threads.ts";
 
 const targetUrl = "https://www.selenium.dev/selenium/web/web-form.html";
 const expectedText = "Bolo real URL verified";
@@ -20,10 +21,15 @@ const activityLog = [];
 const networkLog = [];
 const questions = [];
 const run = {
+  ...createTurnRecord(
+    crypto.randomUUID(),
+    "Standalone browser specialist test"
+  ),
   abortController: new AbortController(),
   currentTool: null,
   id: `browser-real-url-${crypto.randomUUID()}`,
   input: "Standalone real URL browser specialist test",
+  notify: () => undefined,
   pendingQuestion: null,
   progress: "Starting real URL browser test",
   state: "running",
@@ -170,8 +176,8 @@ try {
     networkLog,
     passed: domPassed && modelResult?.status === "verified",
     questions,
-    runId: run.id,
     targetUrl,
+    turnId: run.id,
   };
 } catch (error) {
   const livePage = await agentService.browser.newPage().catch(() => null);
@@ -189,8 +195,8 @@ try {
     networkLog,
     passed: false,
     questions,
-    runId: run.id,
     targetUrl,
+    turnId: run.id,
   };
 } finally {
   await writeFile(

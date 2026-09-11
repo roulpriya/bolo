@@ -1,72 +1,62 @@
 import type { RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Message, Run } from "../types";
+import type { Thread } from "../../../shared/threads.ts";
 import { Progress } from "./progress";
 
-function AgentMarkdown({ children }: { children: string }) {
-  return (
-    <ReactMarkdown
-      components={{
-        a: ({ children: linkChildren, href }) => (
-          <a href={href} rel="noopener noreferrer" target="_blank">
-            {linkChildren}
-          </a>
-        ),
-      }}
-      remarkPlugins={[remarkGfm]}
-    >
-      {children}
-    </ReactMarkdown>
-  );
-}
-
-function MessageContent({
-  message,
-  run,
-}: {
-  message: Message;
-  run: Run | null;
-}) {
-  if (message.progress) {
-    return <Progress run={run} />;
-  }
-  if (message.kind === "bot") {
-    return <AgentMarkdown>{message.text}</AgentMarkdown>;
-  }
-  return message.text;
-}
-
 export function Conversation({
-  messages,
+  thread,
   reference,
-  run,
 }: {
-  messages: Message[];
+  thread: Thread | null;
   reference: RefObject<HTMLElement | null>;
-  run: Run | null;
 }) {
-  const visibleMessages = messages.filter((message) => !message.progress);
   return (
-    <section className="conversation" hidden={!messages.length} ref={reference}>
+    <section
+      className="conversation"
+      hidden={!thread?.turns.length}
+      ref={reference}
+    >
       <div aria-live="polite" className="chat-log">
-        {visibleMessages.map((message) => (
-          <article className={`message ${message.kind}`} key={message.id}>
-            {message.kind === "user" ? (
-              <span className="message-label">You</span>
-            ) : null}
-            <div className="message-body">
-              <MessageContent message={message} run={run} />
-            </div>
-          </article>
+        {thread?.turns.map((turn) => (
+          <section aria-label="Turn" key={turn.id}>
+            {turn.messages
+              .filter((message) => message.kind !== "result")
+              .map((message) => (
+                <article
+                  className={`message ${message.role === "user" ? "user" : "bot"}`}
+                  key={message.id}
+                >
+                  {message.role === "user" ? (
+                    <span className="message-label">You</span>
+                  ) : null}
+                  <div className="message-body">
+                    <ReactMarkdown
+                      components={{
+                        a: ({ children, href }) => (
+                          <a
+                            href={href}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                          >
+                            {children}
+                          </a>
+                        ),
+                      }}
+                      remarkPlugins={[remarkGfm]}
+                    >
+                      {message.text}
+                    </ReactMarkdown>
+                  </div>
+                </article>
+              ))}
+            <article className="message bot">
+              <div className="message-body">
+                <Progress turn={turn} />
+              </div>
+            </article>
+          </section>
         ))}
-        {run ? (
-          <article className="message bot">
-            <div className="message-body">
-              <Progress run={run} />
-            </div>
-          </article>
-        ) : null}
       </div>
     </section>
   );

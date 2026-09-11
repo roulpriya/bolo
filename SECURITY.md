@@ -5,8 +5,8 @@
 - The renderer runs with `sandbox: true`, `contextIsolation: true`, and no Node
   integration.
 - The preload exposes only fixed Bolo operations. Every main-process IPC
-  handler verifies that the sender is Bolo's main renderer and validates the
-  payload again in `DesktopService`.
+  handler verifies the authorized renderer and validates the command payload.
+  Turn and question operations also verify their owning thread.
 - Sarvam, OpenAI, and Anthropic API keys remain in the main process. Raw microphone audio
   is forwarded only to Sarvam and is not persisted.
 - The local browser has a dedicated Bolo profile. Web content is untrusted and
@@ -26,8 +26,15 @@ speech, text, or a tool result.
 
 ## Local data
 
-Sanitized run summaries and the managed browser profile live under Electron's
-user-data directory. Stop and application shutdown abort all active tools.
+Versioned thread records and the managed browser profile live under Electron's
+user-data directory. Thread files include visible transcripts, sanitized tool
+activity, and private provider context that may contain full input/tool output.
+Provider context stays in the main process and is never exposed through thread
+IPC. Runtime controllers, pending callbacks, and raw microphone audio are not
+persisted. Thread files use mode `0600`; thread selection lives only in main-process
+memory for the current app launch. Relaunching opens a blank thread while keeping
+older history available for explicit selection. Legacy files remain intact after migration. Stop and application
+shutdown abort active tools and wait for context/history writes to settle.
 
 Desktop computer use controls the main host display with the user's macOS
 Accessibility and Screen Recording permissions. Screenshots go to the chosen

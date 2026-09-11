@@ -1,4 +1,16 @@
-import type { VoiceStartOptions } from "../shared/ipc.ts";
+import type {
+  AnswerQuestionInput,
+  StartTurnInput,
+  VoiceStartOptions,
+} from "../shared/ipc.ts";
+import type { VoiceEvent } from "../shared/sessions.ts";
+import type {
+  LegacyChat,
+  Thread,
+  ThreadEvent,
+  ThreadSummary,
+  Turn,
+} from "../shared/threads.ts";
 
 interface McpServer {
   args: string[];
@@ -36,21 +48,24 @@ declare global {
       ) => () => void;
       saveMcpServers: (servers: McpServer[]) => Promise<McpServer[]>;
       openSettings: () => Promise<{ ok: true }>;
-      startVoice: (
+      createThread: () => Promise<Thread>;
+      listThreads: () => Promise<ThreadSummary[]>;
+      getThread: (id: string) => Promise<Thread>;
+      selectThread: (id: string) => Promise<Thread>;
+      restoreThread: (options?: { legacyChat?: LegacyChat }) => Promise<Thread>;
+      startVoiceSession: (
         options: VoiceStartOptions
       ) => Promise<{ sessionId: string }>;
       sendVoiceChunk: (sessionId: string, bytes: ArrayBuffer) => void;
-      cancelVoice: (sessionId: string) => Promise<{ ok: true }>;
-      onVoiceEvent: (callback: (event: unknown) => void) => () => void;
-      onAgentText: (callback: (event: unknown) => void) => () => void;
-      startAgent: (text: string) => Promise<{ id: string }>;
-      answerRun: (
-        runId: string,
-        questionId: string,
-        text: string
-      ) => Promise<{ ok: true }>;
-      getRun: (id: string) => Promise<unknown>;
-      stopRun: (id: string) => Promise<{ ok: true }>;
+      cancelVoiceSession: (sessionId: string) => Promise<{ ok: true }>;
+      onVoiceEvent: (callback: (event: VoiceEvent) => void) => () => void;
+      onThreadEvent: (callback: (event: ThreadEvent) => void) => () => void;
+      startTurn: (
+        input: StartTurnInput
+      ) => Promise<{ threadId: string; turnId: string }>;
+      answerQuestion: (input: AnswerQuestionInput) => Promise<{ ok: true }>;
+      getTurn: (threadId: string, turnId: string) => Promise<Turn>;
+      cancelTurn: (threadId: string, turnId: string) => Promise<{ ok: true }>;
       speech: (text: string, languageCode?: string) => Promise<Uint8Array>;
     };
   }

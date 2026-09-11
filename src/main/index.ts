@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
+  dialog,
   globalShortcut,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -107,7 +108,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       preload: fileURLToPath(
-        new URL("../../dist/preload/index.cjs", import.meta.url)
+        new URL("../../dist/renderer/preload/index.cjs", import.meta.url)
       ),
       sandbox: true,
     },
@@ -174,7 +175,7 @@ function showSettings() {
       contextIsolation: true,
       nodeIntegration: false,
       preload: fileURLToPath(
-        new URL("../../dist/preload/index.cjs", import.meta.url)
+        new URL("../../dist/renderer/preload/index.cjs", import.meta.url)
       ),
       sandbox: true,
     },
@@ -219,7 +220,7 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { click: () => showWindow(), label: "Show Bolo" },
-      { click: () => showWindow(true), label: "New Task" },
+      { click: () => showWindow(true), label: "New conversation" },
       { click: () => showSettings(), label: "Settings" },
       { type: "separator" },
       { click: () => app.quit(), label: "Quit Bolo" },
@@ -262,9 +263,9 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send(IPC.voiceEvent, voiceEvent);
     }
   });
-  desktopService.on("agent-text", (agentText) => {
+  desktopService.on("thread-event", (threadEvent) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC.agentText, agentText);
+      mainWindow.webContents.send(IPC.threadEvent, threadEvent);
     }
   });
   session.defaultSession.setPermissionRequestHandler(
@@ -389,23 +390,34 @@ handle(
   (id) => service().startMcpOAuth(id),
   isMainOrSettingsRenderer
 );
-handle(IPC.startVoice, ipcArgs.startVoice, (options) =>
-  service().startVoice(options)
+handle(IPC.createThread, ipcArgs.createThread, () => service().createThread());
+handle(IPC.listThreads, ipcArgs.listThreads, () => service().listThreads());
+handle(IPC.getThread, ipcArgs.getThread, (id) => service().getThread(id));
+handle(IPC.restoreThread, ipcArgs.restoreThread, (options) =>
+  service().restoreThread(options)
 );
-handle(IPC.cancelVoice, ipcArgs.cancelVoice, (sessionId) =>
-  service().cancelVoice(sessionId)
+handle(IPC.selectThread, ipcArgs.selectThread, (id) =>
+  service().selectThread(id)
 );
-handle(IPC.startAgent, ipcArgs.startAgent, (text) =>
-  service().startAgent(text)
+handle(IPC.startVoiceSession, ipcArgs.startVoiceSession, (options) =>
+  service().startVoiceSession(options)
 );
-handle(IPC.answerRun, ipcArgs.answerRun, (runId, questionId, text) =>
-  service().answerRun(runId, questionId, text)
+handle(IPC.cancelVoiceSession, ipcArgs.cancelVoiceSession, (id) =>
+  service().cancelVoiceSession(id)
+);
+handle(IPC.startTurn, ipcArgs.startTurn, (input) => service().startTurn(input));
+handle(IPC.answerQuestion, ipcArgs.answerQuestion, (input) =>
+  service().answerQuestion(input)
 );
 handle(IPC.speech, ipcArgs.speech, (text, languageCode) =>
   service().speech(text, languageCode)
 );
-handle(IPC.getRun, ipcArgs.getRun, (id) => service().getRun(id));
-handle(IPC.stopRun, ipcArgs.stopRun, (id) => service().stopRun(id));
+handle(IPC.getTurn, ipcArgs.getTurn, (threadId, turnId) =>
+  service().getTurn(threadId, turnId)
+);
+handle(IPC.cancelTurn, ipcArgs.cancelTurn, (threadId, turnId) =>
+  service().cancelTurn(threadId, turnId)
+);
 
 ipcMain.on(
   IPC.voiceChunk,
@@ -432,9 +444,34 @@ ipcMain.on(
   }
 );
 
-app.on("will-quit", async () => {
-  globalShortcut.unregisterAll();
-  await desktopService?.close();
+let shutdownComplete = Boolean(false);
+let shuttingDown = Boolean(false);
+
+async function finishShutdown(): Promise<void> {
+  try {
+    await desktopService?.close();
+    shutdownComplete = true;
+    globalShortcut.unregisterAll();
+    app.quit();
+  } catch (error) {
+    shuttingDown = false;
+    dialog.showErrorBox(
+      "Bolo could not finish shutting down",
+      String(error instanceof Error ? error.message : error)
+    );
+  }
+}
+
+app.on("before-quit", async (event) => {
+  if (shutdownComplete) {
+    return;
+  }
+  event.preventDefault();
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  await finishShutdown();
 });
 
 app.on("window-all-closed", () => {

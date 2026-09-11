@@ -13,6 +13,11 @@
     "forceConsistentCasingInFileNames": true,
     "strictNullChecks": true
   },
-  "include": ["test/**/*.ts", "src/main/**/*.ts", "src/shared/**/*.ts"],
+  "include": [
+    "test/**/*.ts",
+    "src/main/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/renderer/app/thread-state.ts"
+  ],
   "exclude": ["dist", "node_modules"]
 }
