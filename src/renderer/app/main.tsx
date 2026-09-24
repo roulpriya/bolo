@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import type { ConversationChoice as ConversationChoiceValue } from "../../shared/input-routing.ts";
 import {
   isTerminalTurn,
   type Thread,
@@ -16,6 +17,7 @@ import { installBrowserShimIfNeeded } from "../browser-shim";
 import { BackgroundRequest } from "./components/background-request";
 import { Composer } from "./components/composer";
 import { Conversation } from "./components/conversation";
+import { ConversationChoice } from "./components/conversation-choice";
 import { RecordingBar } from "./components/recording-bar";
 import { ThreadPicker } from "./components/thread-picker";
 import type { AppState } from "./types";
@@ -52,7 +54,8 @@ function turnState(turn: Turn | undefined): AppState {
 
 function App() {
   const conversation = useThread();
-  const { thread, threads, busy, error, reportError } = conversation;
+  const { thread, threads, busy, error, reportError, pendingInput } =
+    conversation;
   const speech = useSpeech();
   const voice = useVoice(() => {
     conversation.refresh().catch(reportError);
@@ -77,7 +80,7 @@ function App() {
   const canAnswer = latest?.state === "waiting_for_user";
   const canEdit = Boolean(thread && !busy && (!voice.state || canAnswer));
   const canInput = Boolean(
-    thread && !busy && (canAnswer || !(voice.state || active))
+    thread && !busy && !pendingInput && (canAnswer || !(voice.state || active))
   );
 
   const interruptPlayback = () => {
@@ -121,7 +124,7 @@ function App() {
       );
     } else {
       submitted = await conversation.operate(() =>
-        window.boloDesktop.startTurn({ text, threadId: thread.id })
+        window.boloDesktop.submitInput({ text, threadId: thread.id })
       );
     }
     if (submitted) {
@@ -226,14 +229,16 @@ function App() {
     );
   }, [state]);
   useEffect(() => {
-    window.boloDesktop.setExpanded(Boolean(thread?.turns.length || background));
+    window.boloDesktop.setExpanded(
+      Boolean(thread?.turns.length || background || pendingInput)
+    );
     if (thread?.turns.length) {
       requestAnimationFrame(() => {
         const element = conversationRef.current;
         element?.scrollTo(0, element.scrollHeight);
       });
     }
-  }, [thread, background]);
+  }, [thread, background, pendingInput]);
   const onNew = useEffectEvent(() => {
     newConversation().catch(reportError);
   });
@@ -253,7 +258,7 @@ function App() {
       const panel =
         event.target instanceof Element &&
         event.target.closest(
-          ".composer, .conversation, .recording-bar, .thread-picker, .background-request, .palette-error"
+          ".composer, .conversation, .conversation-choice, .recording-bar, .thread-picker, .background-request, .palette-error"
         );
       const ignore = !panel;
       if (ignoringMouseEvents.current !== ignore) {
@@ -329,6 +334,30 @@ function App() {
       stopBackground().catch(reportError);
     },
   };
+  const cancelPendingInput = async () => {
+    if (pendingInput) {
+      await window.boloDesktop.cancelInput(pendingInput.threadId);
+      await conversation.refresh();
+    }
+  };
+  const choiceProps = {
+    disabled: busy,
+    onCancel: () => {
+      cancelPendingInput().catch(reportError);
+    },
+    onChoose: (choice: ConversationChoiceValue) => {
+      if (pendingInput) {
+        conversation
+          .operate(() =>
+            window.boloDesktop.resolveInput({
+              choice,
+              requestId: pendingInput.id,
+            })
+          )
+          .catch(reportError);
+      }
+    },
+  };
   return (
     <main aria-label="Bolo execution agent" className="palette">
       <ThreadPicker {...pickerProps} />
@@ -336,6 +365,9 @@ function App() {
         <BackgroundRequest {...backgroundProps} thread={background} />
       ) : null}
       <Conversation reference={conversationRef} thread={thread} />
+      {pendingInput ? (
+        <ConversationChoice {...choiceProps} pending={pendingInput} />
+      ) : null}
       <RecordingBar onCancel={voice.cancel} recording={voice.recording} />
       {error ? (
         <p className="palette-error" role="alert">

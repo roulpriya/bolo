@@ -1,4 +1,9 @@
 import type {
+  ConversationChoice,
+  InputEvent,
+  PendingInput,
+} from "../shared/input-routing.ts";
+import type {
   AnswerQuestionInput,
   StartTurnInput,
   VoiceStartOptions,
@@ -63,6 +68,14 @@ declare global {
       startTurn: (
         input: StartTurnInput
       ) => Promise<{ threadId: string; turnId: string }>;
+      submitInput: (input: StartTurnInput) => Promise<{ ok: true }>;
+      getPendingInput: (threadId: string) => Promise<PendingInput | null>;
+      resolveInput: (input: {
+        requestId: string;
+        choice: ConversationChoice;
+      }) => Promise<{ ok: true }>;
+      cancelInput: (threadId: string) => Promise<{ ok: true }>;
+      onInputEvent: (callback: (event: InputEvent) => void) => () => void;
       answerQuestion: (input: AnswerQuestionInput) => Promise<{ ok: true }>;
       getTurn: (threadId: string, turnId: string) => Promise<Turn>;
       cancelTurn: (threadId: string, turnId: string) => Promise<{ ok: true }>;

@@ -58,6 +58,7 @@ class FakeVoice {
 function service(sarvam?: SarvamLike) {
   return new DesktopService({
     agentService: new FakeAgent(),
+    continuationDetector: { decide: async () => ({ choice: "continue" }) },
     repository: new ThreadRepository(),
     sarvam: sarvam ?? {
       synthesize: async () => Buffer.from("audio"),

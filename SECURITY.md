@@ -7,8 +7,12 @@
 - The preload exposes only fixed Bolo operations. Every main-process IPC
   handler verifies the authorized renderer and validates the command payload.
   Turn and question operations also verify their owning thread.
-- Sarvam, OpenAI, and Anthropic API keys remain in the main process. Raw microphone audio
+- Sarvam, OpenAI, Anthropic, and TypeSafe API keys remain in the main process. Raw microphone audio
   is forwarded only to Sarvam and is not persisted.
+- Conversation routing sends the new text and bounded recent public conversation
+  messages to TypeSafe's Jev API. It excludes private model context, tool activity,
+  screenshots, and raw audio. Invalid or unavailable decisions require a manual
+  conversation choice before execution. Routing alone never authorizes a tool action.
 - The local browser has a dedicated Bolo profile. Web content is untrusted and
   cannot directly invoke shell or desktop tools.
 

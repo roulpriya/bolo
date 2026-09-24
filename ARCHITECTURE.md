@@ -11,7 +11,7 @@ narrow CommonJS preload bridge and renders public thread snapshots.
 - **Turn**: one submitted request and its execution. It owns the input modality,
   language, messages, questions, tool activity, streamed text, and outcome.
   A clarification answer continues that turn; a subsequent request starts a new
-  turn in the same thread. Individual model calls are steps within a turn.
+  turn after conversation routing. Individual model calls are steps within a turn.
 - **ThreadSession**: live runtime state for a thread. It owns the active
   `TurnExecution`, pending answer resolver, execution promise, and model-history
   adapter. Runtime handles never enter storage or IPC. Idle sessions can be
@@ -29,6 +29,7 @@ Renderer: selected thread + draft + microphone/playback presentation
     ↕ fixed, validated preload capabilities
 DesktopService: Electron facade, settings/MCP integration, voice routing
     ├─ ThreadService → ThreadRepository
+    ├─ InputService → JevRouting → continue / new / user choice
     ├─ TurnCoordinator → SessionManager → AgentService
     └─ VoiceService + SpeechService
 ```
@@ -71,6 +72,9 @@ stylesheet ID that prevents React Aria from injecting inline pressable styles.
 The bridge exposes `createThread`, `listThreads`, `getThread`, `restoreThread`, `selectThread`,
 `startTurn`, `getTurn`, `answerQuestion`, `cancelTurn`, `startVoiceSession`, and
 `cancelVoiceSession`, alongside settings, speech, window, and audio operations.
+`submitInput` routes a new command; `getPendingInput`, `resolveInput`, and
+`cancelInput` expose the pending conversation choice. `startTurn` is the explicit
+thread-targeted path; the composer and voice commands use `submitInput` instead.
 Main-process IPC handlers validate the sender and command payload. Turn and
 question operations verify ownership; voice commands and answers have distinct
 schemas, so incomplete answer targets are rejected.
@@ -97,11 +101,24 @@ Complete snapshots let a later event recover from a missed intermediate event.
 
 ```text
 Typed input ─────────────┐
-Finalized voice input ───┴─> startTurn(threadId)
+Finalized voice input ───┴─> Jev routing → startTurn(selected or new thread)
                               running ↔ waiting_for_user
                                   ↓
                          completed | failed | cancelled
 ```
+
+`InputService` reserves a single pending input before awaiting Jev. Blank chats
+skip detection. Existing chats send their last four public turns (up to eight
+messages per turn, 1,500 characters per text field) and the new input to TypeSafe's
+Choice endpoint. An option probability of at least 0.85 routes automatically;
+an ambiguous choice, missing key, invalid response, or five-second timeout asks
+the user. No turn or model context is written while waiting for this choice.
+Captured text and voice language remain in main-process memory and resolutions
+use a one-use request ID. Input events update the renderer, including the actual
+thread selected after a new-topic decision. Pending choices survive a window
+reload during the same app launch, but are not persisted across app restarts.
+Cancellation, navigation, and shutdown abort detection and discard late results.
+Answers to pending agent questions bypass Jev and retain their explicit targets.
 
 A turn reserves the application execution slot before awaiting persistence.
 The initial turn is saved before the agent starts. A question is recorded and

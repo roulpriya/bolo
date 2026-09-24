@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import type { InputEvent, PendingInput } from "../../shared/input-routing.ts";
 import {
   summarizeThread,
   type Thread,
@@ -18,6 +19,9 @@ export function useThread() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [pendingInput, setPendingInput] = useState<PendingInput | null>(null);
+  const inputRevision = useRef(0);
+  const navigationActive = useRef(Boolean(false));
   const selected = useRef<string>("");
   const generation = useRef(0);
   const operationActive = useRef(Boolean(false));
@@ -31,16 +35,21 @@ export function useThread() {
   };
   const refresh = async () => {
     const id = selected.current;
+    const revision = inputRevision.current;
     if (!hasText(id)) {
       return;
     }
-    const [snapshot, items] = await Promise.all([
+    const [snapshot, items, pending] = await Promise.all([
       window.boloDesktop.getThread(id),
       window.boloDesktop.listThreads(),
+      window.boloDesktop.getPendingInput(id),
     ]);
     setThreads((current) => mergeThreadSummaries(current, items));
     if (selected.current !== id) {
       return;
+    }
+    if (revision === inputRevision.current) {
+      setPendingInput(pending);
     }
     setThread((current) =>
       current?.id === id && current.revision > snapshot.revision
@@ -51,6 +60,9 @@ export function useThread() {
   const open = async (load: () => Promise<Thread>): Promise<boolean> => {
     generation.current += 1;
     const request = generation.current;
+    navigationActive.current = true;
+    inputRevision.current += 1;
+    setPendingInput(null);
     setBusy(true);
     setError("");
     try {
@@ -59,6 +71,7 @@ export function useThread() {
         return false;
       }
       selected.current = snapshot.id;
+      navigationActive.current = false;
       setThread(snapshot);
       remember(snapshot);
       await refresh();
@@ -70,6 +83,7 @@ export function useThread() {
       return false;
     } finally {
       if (request === generation.current) {
+        navigationActive.current = false;
         setBusy(false);
       }
     }
@@ -98,6 +112,19 @@ export function useThread() {
     setThread((current) => applyThreadEvent(current, event));
     remember(event.thread);
   });
+  const onInputEvent = useEffectEvent((event: InputEvent) => {
+    if (navigationActive.current || selected.current !== event.sourceThreadId) {
+      return;
+    }
+    inputRevision.current += 1;
+    setPendingInput(event.pending);
+    if (event.started && event.started.threadId !== selected.current) {
+      const { threadId } = event.started;
+      open(() => window.boloDesktop.getThread(threadId)).catch(reportError);
+    } else if (event.started) {
+      refresh().catch(reportError);
+    }
+  });
   const onFocus = useEffectEvent(() => {
     refresh().catch(reportError);
   });
@@ -108,11 +135,13 @@ export function useThread() {
   });
   useEffect(() => {
     const unsubscribe = window.boloDesktop.onThreadEvent(onEvent);
+    const unsubscribeInput = window.boloDesktop.onInputEvent(onInputEvent);
     restore();
     window.addEventListener("focus", onFocus);
     return () => {
       generation.current += 1;
       unsubscribe();
+      unsubscribeInput();
       window.removeEventListener("focus", onFocus);
     };
   }, []);
@@ -122,6 +151,7 @@ export function useThread() {
     create: () => open(() => window.boloDesktop.createThread()),
     error,
     operate,
+    pendingInput,
     refresh,
     reportError,
     select: (id: string) => open(() => window.boloDesktop.selectThread(id)),

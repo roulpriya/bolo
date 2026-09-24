@@ -27,6 +27,9 @@ npm run browser:setup
 ```
 
 Set `SARVAM_API_KEY` and `OPENAI_API_KEY` in `.env.local`.
+Set `TYPESAFE_API_KEY` to enable Jev conversation detection. `JEV_MODEL` defaults
+to `jev-latest`. Without a TypeSafe key, Bolo asks you to choose the conversation
+for requests after the first turn.
 
 ## Run
 
@@ -39,6 +42,20 @@ npm start
 Use Command–Shift–Space to show or hide Bolo. Typed tasks use the same direct
 agent path. When the agent asks a question, Bolo speaks it and automatically
 listens for an answer; typing remains available.
+
+New typed requests and finalized voice transcripts use the same Jev check:
+clear follow-ups continue the selected chat, and clearly independent tasks open
+a new conversation in the same window. An uncertain result, timeout, or unavailable
+Jev service shows **Continue this chat**, **Start new chat**, and **Cancel request**.
+The captured request waits without executing until you choose. Answers to an
+agent's pending question always stay with that question. New conversation remains
+an explicit way to start with empty context.
+
+Jev receives the new text and a bounded excerpt of the selected chat's last four
+turns. The integration uses TypeSafe's [Choice API](https://docs.typesafe.ai/api).
+Automatic routing starts at an option probability of 0.85; this is an initial
+policy threshold, not a measured accuracy guarantee. Validate it with representative
+English, Hindi, and Hinglish follow-ups before tuning it.
 
 The managed Playwright browser is visible and stores its profile beneath
 Electron's user-data directory. Sign in once when a website requires it. Enter

@@ -263,6 +263,11 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send(IPC.voiceEvent, voiceEvent);
     }
   });
+  desktopService.on("input-event", (inputEvent) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.inputEvent, inputEvent);
+    }
+  });
   desktopService.on("thread-event", (threadEvent) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IPC.threadEvent, threadEvent);
@@ -406,6 +411,18 @@ handle(IPC.cancelVoiceSession, ipcArgs.cancelVoiceSession, (id) =>
   service().cancelVoiceSession(id)
 );
 handle(IPC.startTurn, ipcArgs.startTurn, (input) => service().startTurn(input));
+handle(IPC.submitInput, ipcArgs.submitInput, (input) =>
+  service().submitInput(input)
+);
+handle(IPC.getPendingInput, ipcArgs.getPendingInput, (threadId) =>
+  service().getPendingInput(threadId)
+);
+handle(IPC.resolveInput, ipcArgs.resolveInput, (input) =>
+  service().resolveInput(input)
+);
+handle(IPC.cancelInput, ipcArgs.cancelInput, (threadId) =>
+  service().cancelInput(threadId)
+);
 handle(IPC.answerQuestion, ipcArgs.answerQuestion, (input) =>
   service().answerQuestion(input)
 );

@@ -7,20 +7,24 @@ import { entityId, legacyChatSchema } from "./threads.ts";
  */
 export const IPC = {
   answerQuestion: "bolo:answer-question",
+  cancelInput: "bolo:cancel-input",
   cancelTurn: "bolo:cancel-turn",
   cancelVoiceSession: "bolo:cancel-voice-session",
   createThread: "bolo:create-thread",
   focusCommand: "focus-command",
+  getPendingInput: "bolo:get-pending-input",
   getThread: "bolo:get-thread",
   getTurn: "bolo:get-turn",
   health: "bolo:health",
   hideWindow: "hide-window",
+  inputEvent: "bolo:input-event",
   listThreads: "bolo:list-threads",
   mcpOAuthEvent: "bolo:mcp-oauth-event",
   mcpOAuthStart: "bolo:mcp-oauth-start",
   mcpServersGet: "bolo:mcp-servers-get",
   mcpServersSave: "bolo:mcp-servers-save",
   newCommand: "new-command",
+  resolveInput: "bolo:resolve-input",
   restoreThread: "bolo:restore-thread",
   selectThread: "bolo:select-thread",
   setExpanded: "set-expanded",
@@ -29,6 +33,7 @@ export const IPC = {
   speech: "bolo:speech",
   startTurn: "bolo:start-turn",
   startVoiceSession: "bolo:start-voice-session",
+  submitInput: "bolo:submit-input",
   threadEvent: "bolo:thread-event",
   voiceChunk: "bolo:voice-chunk",
   voiceEvent: "bolo:voice-event",
@@ -36,6 +41,7 @@ export const IPC = {
 
 const id = z.string().trim().min(1).max(200);
 const text = z.string().trim().min(1).max(4000);
+const turnInput = z.object({ text, threadId: entityId }).strict();
 const mcpServer = z
   .object({
     args: z.array(z.string().max(2000)).max(100).default([]),
@@ -78,15 +84,22 @@ export const ipcArgs = {
       })
       .strict(),
   ]),
+  cancelInput: z.tuple([entityId]),
   cancelTurn: z.tuple([entityId, entityId]),
   cancelVoiceSession: z.tuple([id]),
   createThread: z.tuple([]),
+  getPendingInput: z.tuple([entityId]),
   getThread: z.tuple([entityId]),
   getTurn: z.tuple([entityId, entityId]),
   listThreads: z.tuple([]),
   mcpOAuthStart: z.tuple([id]),
   mcpServersGet: z.tuple([]),
   mcpServersSave: z.tuple([z.array(mcpServer).max(20)]),
+  resolveInput: z.tuple([
+    z
+      .object({ choice: z.enum(["continue", "new"]), requestId: entityId })
+      .strict(),
+  ]),
   restoreThread: z.tuple([
     z
       .object({
@@ -103,7 +116,7 @@ export const ipcArgs = {
     z.string().trim().min(1).max(600),
     z.string().trim().min(1).max(30).optional(),
   ]),
-  startTurn: z.tuple([z.object({ text, threadId: entityId }).strict()]),
+  startTurn: z.tuple([turnInput]),
   startVoiceSession: z.tuple([
     z.discriminatedUnion("purpose", [
       z.object({ purpose: z.literal("command"), threadId: entityId }).strict(),
@@ -117,6 +130,7 @@ export const ipcArgs = {
         .strict(),
     ]),
   ]),
+  submitInput: z.tuple([turnInput]),
   voiceChunk: z.tuple([id, z.instanceof(ArrayBuffer)]),
 } as const;
 

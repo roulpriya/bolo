@@ -2,6 +2,7 @@ import "../config.ts";
 import { EventEmitter } from "node:events";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { ConversationChoice } from "../../shared/input-routing.ts";
 import {
   type AnswerQuestionInput,
   ipcArgs,
@@ -12,6 +13,8 @@ import type { VoiceEvent } from "../../shared/sessions.ts";
 import { isTerminalTurn, type LegacyChat } from "../../shared/threads.ts";
 import { AgentService } from "../agent/agent-service.ts";
 import { ThreadRepository } from "../state/thread-repository.ts";
+import { InputService } from "./input-service.ts";
+import { type ContinuationDetector, JevRouting } from "./jev-routing.ts";
 import { McpOAuthService } from "./mcp-oauth.ts";
 import { type McpServerInput, McpSettingsService } from "./mcp-settings.ts";
 import { normalizeLanguageCode } from "./sarvam.ts";
@@ -40,6 +43,7 @@ export class DesktopService extends EventEmitter {
   readonly voice: VoiceLike;
   readonly threads: ThreadService;
   readonly turns: TurnCoordinator;
+  readonly inputs: InputService;
   readonly speechService: SpeechService;
   private activeVoice: {
     id: string;
@@ -54,6 +58,7 @@ export class DesktopService extends EventEmitter {
     voiceService,
     repository,
     sarvam,
+    continuationDetector,
   }: {
     dataDirectory?: string;
     workspaceDirectory?: string;
@@ -61,6 +66,7 @@ export class DesktopService extends EventEmitter {
     voiceService?: VoiceLike;
     repository?: ThreadRepository;
     sarvam?: SarvamLike;
+    continuationDetector?: ContinuationDetector;
   } = {}) {
     super();
     this.dataDirectory = dataDirectory;
@@ -95,6 +101,12 @@ export class DesktopService extends EventEmitter {
       this.agent,
       this.speechService,
       (event) => this.emit("thread-event", event)
+    );
+    this.inputs = new InputService(
+      this.threads,
+      this.turns,
+      continuationDetector ?? new JevRouting(),
+      (event) => this.emit("input-event", event)
     );
     this.voice =
       voiceService ??
@@ -155,6 +167,7 @@ export class DesktopService extends EventEmitter {
     return this.mcpOAuth.complete(callbackUrl);
   }
   createThread() {
+    this.cancelPendingCapture();
     return this.threads.create();
   }
   listThreads() {
@@ -176,17 +189,47 @@ export class DesktopService extends EventEmitter {
     return this.threads.get(id);
   }
   selectThread(id: string) {
+    this.threads.get(id);
+    this.cancelPendingCapture();
     return this.threads.select(id);
   }
   restoreThread(options?: { legacyChat?: LegacyChat }) {
     return this.threads.restore(options);
   }
 
-  startTurn(input: StartTurnInput) {
+  async startTurn(input: StartTurnInput) {
     if (this.activeVoice) {
       throw new Error("Finish or cancel the microphone session first.");
     }
-    return this.turns.start(input);
+    this.inputs.assertAvailable();
+    return await this.turns.start(input);
+  }
+
+  async submitInput(input: StartTurnInput) {
+    if (this.activeVoice) {
+      throw new Error("Finish or cancel the microphone session first.");
+    }
+    return await this.inputs.submit(input);
+  }
+
+  getPendingInput(threadId: string) {
+    return this.inputs.getPending(threadId);
+  }
+
+  resolveInput(input: { requestId: string; choice: ConversationChoice }) {
+    return this.inputs.resolve(input);
+  }
+
+  cancelInput(threadId: string) {
+    this.threads.get(threadId);
+    return this.inputs.cancel(threadId);
+  }
+
+  private cancelPendingCapture() {
+    if (this.activeVoice) {
+      this.cancelVoiceSession(this.activeVoice.id);
+    }
+    this.inputs.cancel();
   }
 
   answerQuestion(input: AnswerQuestionInput) {
@@ -217,7 +260,7 @@ export class DesktopService extends EventEmitter {
     if (options.purpose === "answer") {
       this.turns.waiting(options.threadId, options.turnId, options.questionId);
     } else {
-      this.turns.assertAvailable();
+      this.inputs.assertAvailable();
     }
     const started = this.voice.start(options);
     this.activeVoice = { committed: false, id: started.sessionId, options };
@@ -237,6 +280,7 @@ export class DesktopService extends EventEmitter {
 
   cancelVoiceSession(sessionId: string) {
     if (this.activeVoice?.id === sessionId) {
+      this.inputs.cancel(this.activeVoice.options.threadId);
       this.activeVoice = null;
       this.voice.cancel(sessionId);
     }
@@ -248,6 +292,7 @@ export class DesktopService extends EventEmitter {
       return;
     }
     if (event.type === "closed" || event.type === "failed") {
+      this.inputs.cancel(this.activeVoice.options.threadId);
       this.activeVoice = null;
     }
     this.emit("voice-event", event);
@@ -266,13 +311,16 @@ export class DesktopService extends EventEmitter {
     const { options } = active;
     try {
       const languageCode = normalizeLanguageCode(detectedLanguageCode);
-      let turnId: string;
+      let turnId: string | undefined;
+      let { threadId } = options;
       if (options.purpose === "command") {
-        const started = await this.turns.start(
+        const result = await this.inputs.submit(
           { text: transcript, threadId: options.threadId },
           { inputMode: "voice", languageCode }
         );
-        ({ turnId } = started);
+        if (result.started) {
+          ({ threadId, turnId } = result.started);
+        }
       } else {
         await this.turns.answer(
           {
@@ -291,7 +339,7 @@ export class DesktopService extends EventEmitter {
       this.emit("voice-event", {
         languageCode,
         sessionId,
-        threadId: options.threadId,
+        threadId,
         transcript,
         turnId,
         type: "translated",
@@ -317,6 +365,7 @@ export class DesktopService extends EventEmitter {
   }
 
   async close() {
+    this.inputs.cancel();
     this.activeVoice = null;
     this.voice.close();
     await this.turns.close();

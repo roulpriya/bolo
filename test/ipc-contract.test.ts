@@ -16,6 +16,11 @@ test("preload exposes the thread, turn, and voice contract with removable subscr
     "restoreThread",
     "selectThread",
     "startTurn",
+    "submitInput",
+    "getPendingInput",
+    "resolveInput",
+    "cancelInput",
+    "onInputEvent",
     "answerQuestion",
     "cancelTurn",
     "getTurn",
@@ -34,6 +39,39 @@ test("preload exposes the thread, turn, and voice contract with removable subscr
   );
   assert.match(source, /removeListener\(IPC\.threadEvent/);
   assert.match(source, /removeListener\(IPC\.voiceEvent/);
+  assert.match(source, /removeListener\(IPC\.inputEvent/);
+});
+
+test("routing commands require explicit targets and a bounded conversation choice", () => {
+  const threadId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  assert.equal(
+    ipcArgs.submitInput.safeParse([{ text: "Follow up", threadId }]).success,
+    true
+  );
+  assert.equal(
+    ipcArgs.submitInput.safeParse([{ text: " ", threadId }]).success,
+    false
+  );
+  assert.equal(
+    ipcArgs.resolveInput.safeParse([{ choice: "new", requestId }]).success,
+    true
+  );
+  assert.equal(
+    ipcArgs.resolveInput.safeParse([{ choice: "other", requestId }]).success,
+    false
+  );
+  assert.equal(
+    ipcArgs.resolveInput.safeParse([
+      { choice: "continue", requestId, text: "replace captured input" },
+    ]).success,
+    false
+  );
+  assert.equal(ipcArgs.cancelInput.safeParse([threadId]).success, true);
+  assert.equal(
+    ipcArgs.getPendingInput.safeParse(["../../outside"]).success,
+    false
+  );
 });
 
 test("thread selection is explicit and restoration cannot accept a saved selection", () => {

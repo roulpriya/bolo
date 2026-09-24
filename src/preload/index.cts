@@ -3,12 +3,15 @@ import { IPC } from "../shared/ipc.ts";
 
 const boloDesktop: Window["boloDesktop"] = {
   answerQuestion: (input) => ipcRenderer.invoke(IPC.answerQuestion, input),
+  cancelInput: (threadId) => ipcRenderer.invoke(IPC.cancelInput, threadId),
   cancelTurn: (threadId, turnId) =>
     ipcRenderer.invoke(IPC.cancelTurn, threadId, turnId),
   cancelVoiceSession: (sessionId) =>
     ipcRenderer.invoke(IPC.cancelVoiceSession, sessionId),
   createThread: () => ipcRenderer.invoke(IPC.createThread),
   getMcpServers: () => ipcRenderer.invoke(IPC.mcpServersGet),
+  getPendingInput: (threadId) =>
+    ipcRenderer.invoke(IPC.getPendingInput, threadId),
   getThread: (id) => ipcRenderer.invoke(IPC.getThread, id),
   getTurn: (threadId, turnId) =>
     ipcRenderer.invoke(IPC.getTurn, threadId, turnId),
@@ -21,6 +24,14 @@ const boloDesktop: Window["boloDesktop"] = {
     const listener = () => callback();
     ipcRenderer.on(IPC.focusCommand, listener);
     return () => ipcRenderer.removeListener(IPC.focusCommand, listener);
+  },
+  onInputEvent(callback) {
+    const listener = (
+      _event: unknown,
+      inputEvent: Parameters<typeof callback>[0]
+    ) => callback(inputEvent);
+    ipcRenderer.on(IPC.inputEvent, listener);
+    return () => ipcRenderer.removeListener(IPC.inputEvent, listener);
   },
   onMcpOAuthEvent(callback) {
     const listener = (
@@ -52,6 +63,7 @@ const boloDesktop: Window["boloDesktop"] = {
     return () => ipcRenderer.removeListener(IPC.voiceEvent, listener);
   },
   openSettings: () => ipcRenderer.invoke(IPC.settingsOpen),
+  resolveInput: (input) => ipcRenderer.invoke(IPC.resolveInput, input),
   restoreThread: (options) => ipcRenderer.invoke(IPC.restoreThread, options),
   saveMcpServers: (servers) => ipcRenderer.invoke(IPC.mcpServersSave, servers),
   selectThread: (id) => ipcRenderer.invoke(IPC.selectThread, id),
@@ -69,6 +81,7 @@ const boloDesktop: Window["boloDesktop"] = {
   startTurn: (input) => ipcRenderer.invoke(IPC.startTurn, input),
   startVoiceSession: (options) =>
     ipcRenderer.invoke(IPC.startVoiceSession, options),
+  submitInput: (input) => ipcRenderer.invoke(IPC.submitInput, input),
 };
 
 contextBridge.exposeInMainWorld("boloDesktop", boloDesktop);
